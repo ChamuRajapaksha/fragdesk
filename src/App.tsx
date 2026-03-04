@@ -1,50 +1,52 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { useState } from 'react';
+import './App.css';
+import MainLayout from './components/layout/MainLayout';
+import DashboardHome from './components/dashboard/DashboardHome';
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [activeTab, setActiveTab] = useState('dashboard');
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'dashboard':
+        return <DashboardHome />;
+      case 'clipboard':
+        return (
+          <div>
+            <h1 className="text-3xl font-bold text-frag-text">Clipboard Manager</h1>
+            <p className="text-frag-muted mt-2">Coming soon...</p>
+          </div>
+        );
+      case 'macros':
+        return (
+          <div>
+            <h1 className="text-3xl font-bold text-frag-text">Macro System</h1>
+            <p className="text-frag-muted mt-2">Coming soon...</p>
+          </div>
+        );
+      case 'monitor':
+        return (
+          <div>
+            <h1 className="text-3xl font-bold text-frag-text">System Monitor</h1>
+            <p className="text-frag-muted mt-2">Coming soon...</p>
+          </div>
+        );
+      case 'settings':
+        return (
+          <div>
+            <h1 className="text-3xl font-bold text-frag-text">Settings</h1>
+            <p className="text-frag-muted mt-2">Coming soon...</p>
+          </div>
+        );
+      default:
+        return <DashboardHome />;
+    }
+  };
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+    <MainLayout activeTab={activeTab} setActiveTab={setActiveTab}>
+      {renderContent()}
+    </MainLayout>
   );
 }
 
