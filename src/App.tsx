@@ -2,6 +2,7 @@ import { useState } from 'react';
 import './App.css';
 import MainLayout from './components/layout/MainLayout';
 import DashboardHome from './components/dashboard/DashboardHome';
+import ClipboardHistory from './components/features/clipboard/ClipboardHistory';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -11,12 +12,7 @@ function App() {
       case 'dashboard':
         return <DashboardHome />;
       case 'clipboard':
-        return (
-          <div>
-            <h1 className="text-3xl font-bold text-frag-text">Clipboard Manager</h1>
-            <p className="text-frag-muted mt-2">Coming soon...</p>
-          </div>
-        );
+        return <ClipboardHistory />;
       case 'macros':
         return (
           <div>
