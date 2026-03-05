@@ -3,6 +3,7 @@ import './App.css';
 import MainLayout from './components/layout/MainLayout';
 import DashboardHome from './components/dashboard/DashboardHome';
 import ClipboardHistory from './components/features/clipboard/ClipboardHistory';
+import SystemMonitor from './components/features/monitor/SystemMonitor';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -21,12 +22,7 @@ function App() {
           </div>
         );
       case 'monitor':
-        return (
-          <div>
-            <h1 className="text-3xl font-bold text-frag-text">System Monitor</h1>
-            <p className="text-frag-muted mt-2">Coming soon...</p>
-          </div>
-        );
+        return <SystemMonitor />;
       case 'settings':
         return (
           <div>
