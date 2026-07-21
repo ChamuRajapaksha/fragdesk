@@ -21,6 +21,8 @@ use commands::monitor::{
     get_cpu_per_core,
 };
 
+use commands::macros::get_macros;
+
 fn main() {
     tauri::Builder::default()
         .manage(ClipboardMonitor::new())
@@ -37,6 +39,8 @@ fn main() {
             // Monitor commands
             get_system_stats,
             get_cpu_per_core,
+            // Macro commands
+            get_macros,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
