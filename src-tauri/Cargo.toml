@@ -28,3 +28,6 @@ arboard = "3.4"
 chrono = "0.4"
 dirs = "5.0"
 sysinfo = "0.31"
+rdev = "0.5"
+uuid = { version = "1", features = ["v4"] }
+
