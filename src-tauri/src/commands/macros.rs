@@ -3,6 +3,7 @@ use crate::database::{
     rename_macro_item, MacroEvent, MacroSummary,
 };
 use rdev::{listen, simulate, Button, EventType, Key};
+use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -50,6 +51,18 @@ impl MacroPlayback {
     }
 }
 
+/// Returned by `stop_macro_recording` — a preview of what was captured,
+/// *before* it's saved. Nothing is persisted or cleared at this point;
+/// the frontend shows this, lets the user type a name, then calls
+/// `save_macro_recording`. This gap matters: capture is OS-global, so if
+/// naming happened while `is_recording` was still true, typing the name
+/// would get recorded into the macro itself.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecordingPreview {
+    pub event_count: usize,
+    pub duration_ms: u64,
+}
+
 #[tauri::command]
 pub fn start_macro_recording(
     app_handle: AppHandle,
@@ -75,13 +88,34 @@ pub fn start_macro_recording(
     Ok("Recording started".to_string())
 }
 
-/// Stops recording and saves the captured sequence under `name`.
+/// Stops *capturing* only. Does NOT save or clear the buffer — call
+/// `save_macro_recording(name)` to persist it, or `discard_macro_recording`
+/// to throw it away. This gap is intentional (see `RecordingPreview` docs).
 #[tauri::command]
 pub fn stop_macro_recording(
     state: tauri::State<'_, MacroRecorder>,
+) -> Result<RecordingPreview, String> {
+    state.is_recording.store(false, Ordering::SeqCst);
+
+    let buffer = state.buffer.lock().unwrap();
+    let event_count = buffer.len();
+    let duration_ms: u64 = buffer.iter().map(event_delay_ms).sum();
+
+    Ok(RecordingPreview {
+        event_count,
+        duration_ms,
+    })
+}
+
+/// Persists whatever is currently sitting in the recorder's buffer under
+/// `name`. Call this only after `stop_macro_recording` — capture should
+/// already be stopped by the time the user has typed a name.
+#[tauri::command]
+pub fn save_macro_recording(
+    state: tauri::State<'_, MacroRecorder>,
     name: String,
 ) -> Result<MacroSummary, String> {
-    state.is_recording.store(false, Ordering::SeqCst);
+    state.is_recording.store(false, Ordering::SeqCst); // safety net
     let events = std::mem::take(&mut *state.buffer.lock().unwrap());
 
     if events.is_empty() {
@@ -105,7 +139,7 @@ pub fn stop_macro_recording(
     })
 }
 
-/// Cancels an in-progress recording without saving it.
+/// Cancels an in-progress or just-stopped recording without saving it.
 #[tauri::command]
 pub fn discard_macro_recording(state: tauri::State<'_, MacroRecorder>) -> Result<(), String> {
     state.is_recording.store(false, Ordering::SeqCst);
@@ -264,7 +298,15 @@ fn spawn_input_listener(app_handle: AppHandle, state: &tauri::State<'_, MacroRec
             };
 
             if let Some(me) = macro_event {
-                buffer.lock().unwrap().push(me);
+                let mut buf = buffer.lock().unwrap();
+                buf.push(me);
+                let count = buf.len();
+                drop(buf);
+
+                let _ = app_handle.emit(
+                    "macro-recording-progress",
+                    serde_json::json!({ "event_count": count }),
+                );
             }
         };
 
