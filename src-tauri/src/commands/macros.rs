@@ -1,14 +1,17 @@
 use crate::database::{
-    delete_macro_item, get_macro_by_id, get_macros as db_get_macros, init_database, insert_macro,
-    rename_macro_item, MacroEvent, MacroSummary,
+    delete_macro_item, get_macro_by_id, get_macro_id_by_hotkey, get_macros as db_get_macros,
+    init_database, insert_macro, rename_macro_item, set_macro_hotkey_item, MacroEvent, MacroItem,
+    MacroSummary,
 };
 use rdev::{listen, simulate, Button, EventType, Key};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use uuid::Uuid;
 
 /// Holds recording state. The global input listener (`rdev::listen`) blocks
@@ -51,6 +54,23 @@ impl MacroPlayback {
     }
 }
 
+/// Maps a registered hotkey string (as accepted by
+/// `tauri_plugin_global_shortcut`) to the macro id it should trigger.
+/// Kept in memory alongside the DB copy so the global shortcut handler
+/// doesn't need to hit SQLite on every keypress. Manage with
+/// `.manage(HotkeyRegistry::new())`.
+pub struct HotkeyRegistry {
+    pub map: Mutex<HashMap<String, String>>,
+}
+
+impl HotkeyRegistry {
+    pub fn new() -> Self {
+        Self {
+            map: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
 /// Returned by `stop_macro_recording` — a preview of what was captured,
 /// *before* it's saved. Nothing is persisted or cleared at this point;
 /// the frontend shows this, lets the user type a name, then calls
@@ -61,6 +81,20 @@ impl MacroPlayback {
 pub struct RecordingPreview {
     pub event_count: usize,
     pub duration_ms: u64,
+}
+
+/// Fixed global hotkey that toggles recording on/off, independent of any
+/// per-macro playback hotkey. This exists specifically so recording can be
+/// started/stopped WITHOUT clicking an on-screen button — since capture is
+/// OS-global, clicking a "Stop Recording" button gets recorded as part of
+/// the macro, and replaying that click later can re-trigger whatever's at
+/// that screen position (including the record button itself, causing a
+/// start/stop loop). A keyboard-only toggle avoids that entirely.
+pub const RECORD_TOGGLE_HOTKEY: &str = "F9";
+
+#[tauri::command]
+pub fn get_record_hotkey() -> String {
+    RECORD_TOGGLE_HOTKEY.to_string()
 }
 
 #[tauri::command]
@@ -90,7 +124,7 @@ pub fn start_macro_recording(
 
 /// Stops *capturing* only. Does NOT save or clear the buffer — call
 /// `save_macro_recording(name)` to persist it, or `discard_macro_recording`
-/// to throw it away. This gap is intentional (see `RecordingPreview` docs).
+/// to throw it away.
 #[tauri::command]
 pub fn stop_macro_recording(
     state: tauri::State<'_, MacroRecorder>,
@@ -108,8 +142,7 @@ pub fn stop_macro_recording(
 }
 
 /// Persists whatever is currently sitting in the recorder's buffer under
-/// `name`. Call this only after `stop_macro_recording` — capture should
-/// already be stopped by the time the user has typed a name.
+/// `name`. Call this only after `stop_macro_recording`.
 #[tauri::command]
 pub fn save_macro_recording(
     state: tauri::State<'_, MacroRecorder>,
@@ -136,6 +169,7 @@ pub fn save_macro_recording(
         created_at: chrono::Utc::now().timestamp(),
         event_count: events.len() as i32,
         duration_ms: duration_ms as i64,
+        hotkey: None,
     })
 }
 
@@ -154,8 +188,21 @@ pub fn get_macros() -> Result<Vec<MacroSummary>, String> {
 }
 
 #[tauri::command]
-pub fn delete_macro(id: String) -> Result<(), String> {
+pub fn delete_macro(
+    app_handle: AppHandle,
+    registry: tauri::State<'_, HotkeyRegistry>,
+    id: String,
+) -> Result<(), String> {
+    // Unregister any hotkey this macro owned so it doesn't linger as a
+    // dangling global shortcut pointing at a deleted macro.
     let conn = init_database().map_err(|e| e.to_string())?;
+    if let Some(existing) = get_macro_by_id(&conn, &id).map_err(|e| e.to_string())? {
+        if let Some(hotkey) = existing.hotkey {
+            let _ = app_handle.global_shortcut().unregister(hotkey.as_str());
+            registry.map.lock().unwrap().remove(&hotkey);
+        }
+    }
+
     delete_macro_item(&conn, &id).map_err(|e| e.to_string())
 }
 
@@ -163,6 +210,50 @@ pub fn delete_macro(id: String) -> Result<(), String> {
 pub fn rename_macro(id: String, name: String) -> Result<(), String> {
     let conn = init_database().map_err(|e| e.to_string())?;
     rename_macro_item(&conn, &id, &name).map_err(|e| e.to_string())
+}
+
+/// Assigns (or clears, if `hotkey` is `None`) a global hotkey for a macro.
+/// Registers/unregisters with the OS via `tauri-plugin-global-shortcut`
+/// and keeps the in-memory `HotkeyRegistry` + the DB column in sync.
+#[tauri::command]
+pub fn set_macro_hotkey(
+    app_handle: AppHandle,
+    registry: tauri::State<'_, HotkeyRegistry>,
+    id: String,
+    hotkey: Option<String>,
+) -> Result<(), String> {
+    let conn = init_database().map_err(|e| e.to_string())?;
+
+    let existing_hotkey = get_macro_by_id(&conn, &id)
+        .map_err(|e| e.to_string())?
+        .and_then(|m| m.hotkey);
+
+    if let Some(new_key) = &hotkey {
+        if let Some(owner_id) = get_macro_id_by_hotkey(&conn, new_key).map_err(|e| e.to_string())? {
+            if owner_id != id {
+                return Err("That hotkey is already assigned to another macro".to_string());
+            }
+        }
+    }
+
+    // Unregister the old binding if it's being replaced or cleared.
+    if let Some(old_key) = &existing_hotkey {
+        if hotkey.as_deref() != Some(old_key.as_str()) {
+            let _ = app_handle.global_shortcut().unregister(old_key.as_str());
+            registry.map.lock().unwrap().remove(old_key);
+        }
+    }
+
+    if let Some(new_key) = &hotkey {
+        app_handle
+            .global_shortcut()
+            .register(new_key.as_str())
+            .map_err(|e| format!("Failed to register hotkey '{new_key}': {e}"))?;
+        registry.map.lock().unwrap().insert(new_key.clone(), id.clone());
+    }
+
+    set_macro_hotkey_item(&conn, &id, hotkey.as_deref()).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -182,13 +273,131 @@ pub fn play_macro(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Macro not found".to_string())?;
 
-    state.cancel.store(false, Ordering::SeqCst);
-    state.is_playing.store(true, Ordering::SeqCst);
+    start_playback(
+        app_handle,
+        state.is_playing.clone(),
+        state.cancel.clone(),
+        macro_item,
+        speed.unwrap_or(1.0),
+        repeat.unwrap_or(1),
+    );
 
-    let is_playing = state.is_playing.clone();
-    let cancel = state.cancel.clone();
-    let speed = speed.unwrap_or(1.0).max(0.05);
-    let repeat = repeat.unwrap_or(1).max(1);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_macro_playback(state: tauri::State<'_, MacroPlayback>) -> Result<(), String> {
+    state.cancel.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+/// Called from `tauri_plugin_global_shortcut`'s handler when a registered
+/// hotkey fires. First checks whether it's the fixed record-toggle hotkey;
+/// otherwise looks up which macro (if any) owns that hotkey and plays it
+/// at default speed/repeat (hotkeys don't carry per-play options — use the
+/// UI's Play button for that).
+pub fn handle_global_shortcut(app_handle: &AppHandle, shortcut_str: &str) {
+    if shortcut_str == RECORD_TOGGLE_HOTKEY {
+        toggle_recording_via_hotkey(app_handle);
+        return;
+    }
+
+    let macro_id = {
+        let registry = app_handle.state::<HotkeyRegistry>();
+        let result = registry.map.lock().unwrap().get(shortcut_str).cloned();
+        result
+    };
+
+    let Some(id) = macro_id else { return };
+
+    let playback = app_handle.state::<MacroPlayback>();
+    if playback.is_playing.load(Ordering::SeqCst) {
+        return;
+    }
+
+    let conn = match init_database() {
+        Ok(c) => c,
+        Err(err) => {
+            eprintln!("[macros] hotkey trigger: failed to open db: {err}");
+            return;
+        }
+    };
+
+    let macro_item = match get_macro_by_id(&conn, &id) {
+        Ok(Some(m)) => m,
+        Ok(None) => return,
+        Err(err) => {
+            eprintln!("[macros] hotkey trigger: failed to load macro: {err}");
+            return;
+        }
+    };
+
+    start_playback(
+        app_handle.clone(),
+        playback.is_playing.clone(),
+        playback.cancel.clone(),
+        macro_item,
+        1.0,
+        1,
+    );
+}
+
+// ---------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------
+
+/// Toggles recording on/off from the global F9 hotkey. Mirrors the logic
+/// in `start_macro_recording`/`stop_macro_recording`, but since a hotkey
+/// trigger has no direct return channel to the frontend (unlike an
+/// `invoke()` call), it notifies the UI via `macro-recording-hotkey-started`
+/// / `macro-recording-hotkey-stopped` events instead.
+fn toggle_recording_via_hotkey(app_handle: &AppHandle) {
+    let recorder = app_handle.state::<MacroRecorder>();
+
+    if recorder.is_recording.load(Ordering::SeqCst) {
+        recorder.is_recording.store(false, Ordering::SeqCst);
+
+        let buffer = recorder.buffer.lock().unwrap();
+        let preview = RecordingPreview {
+            event_count: buffer.len(),
+            duration_ms: buffer.iter().map(event_delay_ms).sum(),
+        };
+        drop(buffer);
+
+        let _ = app_handle.emit("macro-recording-hotkey-stopped", preview);
+    } else {
+        if recorder
+            .listener_spawned
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            spawn_input_listener(app_handle.clone(), &recorder);
+        }
+
+        recorder.buffer.lock().unwrap().clear();
+        *recorder.last_event_at.lock().unwrap() = Some(Instant::now());
+        recorder.is_recording.store(true, Ordering::SeqCst);
+
+        let _ = app_handle.emit("macro-recording-hotkey-started", ());
+    }
+}
+
+/// Shared playback engine used by both the `play_macro` command and the
+/// global hotkey handler, so there's exactly one place that implements
+/// "replay this sequence of events."
+fn start_playback(
+    app_handle: AppHandle,
+    is_playing: Arc<AtomicBool>,
+    cancel: Arc<AtomicBool>,
+    macro_item: MacroItem,
+    speed: f64,
+    repeat: i32,
+) {
+    cancel.store(false, Ordering::SeqCst);
+    is_playing.store(true, Ordering::SeqCst);
+
+    let speed = if speed <= 0.0 { 1.0 } else { speed };
+    let repeat = repeat.max(1);
 
     thread::spawn(move || {
         let total = macro_item.events.len();
@@ -231,19 +440,7 @@ pub fn play_macro(
             serde_json::json!({ "macro_id": macro_item.id, "cancelled": cancelled }),
         );
     });
-
-    Ok(())
 }
-
-#[tauri::command]
-pub fn stop_macro_playback(state: tauri::State<'_, MacroPlayback>) -> Result<(), String> {
-    state.cancel.store(true, Ordering::SeqCst);
-    Ok(())
-}
-
-// ---------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------
 
 fn event_delay_ms(event: &MacroEvent) -> u64 {
     match event {
