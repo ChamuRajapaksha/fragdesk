@@ -8,6 +8,7 @@ interface MacroSummary {
     created_at: number; // unix seconds
     event_count: number;
     duration_ms: number;
+    hotkey: string | null;
 }
 
 interface RecordingPreview {
@@ -60,16 +61,44 @@ export default function MacroManager() {
     // Delete confirmation: which macro id is armed for a second click.
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+    // Hotkey capture: which macro id is currently listening for a key combo.
+    const [capturingHotkeyId, setCapturingHotkeyId] = useState<string | null>(null);
+
+    // The fixed record-toggle hotkey (default "F9"), fetched from the
+    // backend so the displayed tip stays in sync if it's ever changed there.
+    const [recordHotkey, setRecordHotkey] = useState<string>("F9");
+
     const nameInputRef = useRef<HTMLInputElement>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
     const confirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         refreshMacros();
+        invoke<string>("get_record_hotkey").then(setRecordHotkey).catch(() => {});
 
         const unlistenRecording = listen<{ event_count: number }>(
             "macro-recording-progress",
             (e) => setLiveCount(e.payload.event_count)
+        );
+
+        const unlistenHotkeyStarted = listen("macro-recording-hotkey-started", () => {
+            setIsRecording(true);
+            setLiveCount(0);
+        });
+
+        const unlistenHotkeyStopped = listen<RecordingPreview>(
+            "macro-recording-hotkey-stopped",
+            (e) => {
+                setIsRecording(false);
+                if (e.payload.event_count === 0) {
+                    setError(
+                        "No input was captured — try again and press some keys or move the mouse"
+                    );
+                    return;
+                }
+                setPendingPreview(e.payload);
+                setMacroName("");
+            }
         );
 
         const unlistenPlaybackProgress = listen<PlaybackProgress>(
@@ -87,6 +116,8 @@ export default function MacroManager() {
 
         return () => {
             unlistenRecording.then((f) => f());
+            unlistenHotkeyStarted.then((f) => f());
+            unlistenHotkeyStopped.then((f) => f());
             unlistenPlaybackProgress.then((f) => f());
             unlistenPlaybackFinished.then((f) => f());
             if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
@@ -106,6 +137,40 @@ export default function MacroManager() {
             setTimeout(() => renameInputRef.current?.focus(), 50);
         }
     }, [renamingId]);
+
+    useEffect(() => {
+        if (!capturingHotkeyId) return;
+
+        function onKeyDown(e: KeyboardEvent) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (e.key === "Escape") {
+                setCapturingHotkeyId(null);
+                return;
+            }
+
+            // Ignore a bare modifier press — wait for the actual key that
+            // completes the combo.
+            if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return;
+
+            const mods: string[] = [];
+            if (e.ctrlKey || e.metaKey) mods.push("CommandOrControl");
+            if (e.altKey) mods.push("Alt");
+            if (e.shiftKey) mods.push("Shift");
+
+            // e.code (e.g. "KeyA", "Digit1", "F1", "Escape") maps closely to
+            // the key-code names tauri-plugin-global-shortcut expects. If a
+            // particular key fails to register, this is the first place to
+            // check — the crate's accepted names may differ slightly.
+            const combo = [...mods, e.code].join("+");
+
+            void handleSetHotkey(capturingHotkeyId, combo);
+        }
+
+        document.addEventListener("keydown", onKeyDown, true);
+        return () => document.removeEventListener("keydown", onKeyDown, true);
+    }, [capturingHotkeyId]);
 
     async function refreshMacros() {
         try {
@@ -235,6 +300,26 @@ export default function MacroManager() {
         }
     }
 
+    async function handleSetHotkey(id: string, hotkey: string) {
+        try {
+            await invoke("set_macro_hotkey", { id, hotkey });
+            setCapturingHotkeyId(null);
+            await refreshMacros();
+        } catch (err) {
+            setCapturingHotkeyId(null);
+            setError(String(err));
+        }
+    }
+
+    async function handleClearHotkey(id: string) {
+        try {
+            await invoke("set_macro_hotkey", { id, hotkey: null });
+            await refreshMacros();
+        } catch (err) {
+            setError(String(err));
+        }
+    }
+
     return (
         <div className="min-h-full bg-[#0a0e27] text-white p-6 space-y-6">
             <div>
@@ -252,6 +337,12 @@ export default function MacroManager() {
 
             {/* Recording control */}
             <div className="bg-[#141933] rounded-xl p-5 border border-white/5">
+                <p className="text-xs text-gray-500 mb-3">
+                    Tip: press{" "}
+                    <span className="font-mono text-[#00d9ff]">{recordHotkey}</span> anywhere to
+                    start/stop instead of clicking below — clicking the button while recording
+                    gets captured as part of the macro itself.
+                </p>
                 {!pendingPreview ? (
                     <div className="flex items-center justify-between">
                         <div>
@@ -388,6 +479,32 @@ export default function MacroManager() {
                                         {m.event_count} events · {formatDuration(m.duration_ms)} ·{" "}
                                         {formatDate(m.created_at)}
                                     </p>
+                                    <div className="mt-1.5">
+                                        {capturingHotkeyId === m.id ? (
+                                            <span className="text-xs text-[#b026ff] animate-pulse">
+                                                Press a key combo... (Esc to cancel)
+                                            </span>
+                                        ) : m.hotkey ? (
+                                            <span className="inline-flex items-center gap-1.5">
+                                                <span className="text-xs font-mono bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
+                                                    {m.hotkey.replace("CommandOrControl", "Ctrl")}
+                                                </span>
+                                                <button
+                                                    onClick={() => handleClearHotkey(m.id)}
+                                                    className="text-xs text-gray-500 hover:text-[#ff3366]"
+                                                >
+                                                    clear
+                                                </button>
+                                            </span>
+                                        ) : (
+                                            <button
+                                                onClick={() => setCapturingHotkeyId(m.id)}
+                                                className="text-xs text-gray-500 hover:text-[#00d9ff]"
+                                            >
+                                                + set hotkey
+                                            </button>
+                                        )}
+                                    </div>
                                     {isThisPlaying && progress && (
                                         <div className="mt-2 w-64">
                                             <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
