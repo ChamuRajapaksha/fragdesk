@@ -53,7 +53,16 @@ export default function MacroManager() {
     const [speed, setSpeed] = useState(1);
     const [repeat, setRepeat] = useState(1);
 
+    // Rename state: which macro id is being edited, and its draft text.
+    const [renamingId, setRenamingId] = useState<string | null>(null);
+    const [renameDraft, setRenameDraft] = useState("");
+
+    // Delete confirmation: which macro id is armed for a second click.
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
     const nameInputRef = useRef<HTMLInputElement>(null);
+    const renameInputRef = useRef<HTMLInputElement>(null);
+    const confirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         refreshMacros();
@@ -80,6 +89,7 @@ export default function MacroManager() {
             unlistenRecording.then((f) => f());
             unlistenPlaybackProgress.then((f) => f());
             unlistenPlaybackFinished.then((f) => f());
+            if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
         };
     }, []);
 
@@ -90,6 +100,12 @@ export default function MacroManager() {
             setTimeout(() => nameInputRef.current?.focus(), 50);
         }
     }, [pendingPreview]);
+
+    useEffect(() => {
+        if (renamingId) {
+            setTimeout(() => renameInputRef.current?.focus(), 50);
+        }
+    }, [renamingId]);
 
     async function refreshMacros() {
         try {
@@ -165,6 +181,49 @@ export default function MacroManager() {
         } catch (err) {
             setError(String(err));
         }
+    }
+
+    function startRename(m: MacroSummary) {
+        setRenamingId(m.id);
+        setRenameDraft(m.name);
+    }
+
+    async function commitRename() {
+        const id = renamingId;
+        const name = renameDraft.trim();
+        setRenamingId(null);
+        if (!id || !name) return;
+
+        // Optimistic update so the list feels instant; refresh reconciles
+        // with the DB afterward in case the call fails.
+        setMacros((prev) => prev.map((m) => (m.id === id ? { ...m, name } : m)));
+        try {
+            await invoke("rename_macro", { id, name });
+        } catch (err) {
+            setError(String(err));
+            await refreshMacros();
+        }
+    }
+
+    function cancelRename() {
+        setRenamingId(null);
+        setRenameDraft("");
+    }
+
+    function handleDeleteClick(id: string) {
+        if (confirmDeleteId === id) {
+            // Second click within the window — actually delete.
+            if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+            setConfirmDeleteId(null);
+            void handleDelete(id);
+            return;
+        }
+
+        // First click — arm confirmation, auto-reset after a few seconds
+        // so a stray later click elsewhere doesn't leave it primed forever.
+        setConfirmDeleteId(id);
+        if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+        confirmResetTimer.current = setTimeout(() => setConfirmDeleteId(null), 3000);
     }
 
     async function handleDelete(id: string) {
@@ -294,13 +353,37 @@ export default function MacroManager() {
                 ) : (
                     macros.map((m) => {
                         const isThisPlaying = playingId === m.id;
+                        const isRenamingThis = renamingId === m.id;
+                        const isConfirmingDelete = confirmDeleteId === m.id;
+
                         return (
                             <div
                                 key={m.id}
                                 className="bg-[#141933] rounded-xl p-4 border border-white/5 flex items-center justify-between"
                             >
-                                <div>
-                                    <p className="font-medium">{m.name}</p>
+                                <div className="flex-1 min-w-0">
+                                    {isRenamingThis ? (
+                                        <input
+                                            ref={renameInputRef}
+                                            type="text"
+                                            value={renameDraft}
+                                            onChange={(e) => setRenameDraft(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") commitRename();
+                                                if (e.key === "Escape") cancelRename();
+                                            }}
+                                            onBlur={commitRename}
+                                            className="bg-[#0a0e27] border border-[#00d9ff] rounded px-2 py-1 text-sm w-full max-w-xs focus:outline-none"
+                                        />
+                                    ) : (
+                                        <button
+                                            onClick={() => startRename(m)}
+                                            title="Click to rename"
+                                            className="font-medium text-left hover:text-[#00d9ff] transition-colors"
+                                        >
+                                            {m.name}
+                                        </button>
+                                    )}
                                     <p className="text-xs text-gray-500 mt-0.5">
                                         {m.event_count} events · {formatDuration(m.duration_ms)} ·{" "}
                                         {formatDate(m.created_at)}
@@ -323,7 +406,7 @@ export default function MacroManager() {
                                         </div>
                                     )}
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex gap-2 shrink-0 ml-4">
                                     {isThisPlaying ? (
                                         <button
                                             onClick={handleStopPlayback}
@@ -341,11 +424,15 @@ export default function MacroManager() {
                                         </button>
                                     )}
                                     <button
-                                        onClick={() => handleDelete(m.id)}
+                                        onClick={() => handleDeleteClick(m.id)}
                                         disabled={isThisPlaying}
-                                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
+                                            isConfirmingDelete
+                                                ? "bg-[#ff3366] text-white"
+                                                : "bg-white/5 hover:bg-white/10 text-gray-300"
+                                        }`}
                                     >
-                                        Delete
+                                        {isConfirmingDelete ? "Confirm?" : "Delete"}
                                     </button>
                                 </div>
                             </div>
