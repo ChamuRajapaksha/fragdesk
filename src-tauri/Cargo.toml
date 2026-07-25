@@ -30,4 +30,4 @@ dirs = "5.0"
 sysinfo = "0.31"
 rdev = "0.5"
 uuid = { version = "1", features = ["v4"] }
-
+tauri-plugin-global-shortcut = "2"
