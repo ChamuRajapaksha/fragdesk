@@ -68,6 +68,10 @@ export default function MacroManager() {
     // backend so the displayed tip stays in sync if it's ever changed there.
     const [recordHotkey, setRecordHotkey] = useState<string>("F9");
 
+    // macOS Accessibility permission — null while unchecked, so the banner
+    // doesn't flash on platforms where it's always true.
+    const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+
     const nameInputRef = useRef<HTMLInputElement>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
     const confirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -75,6 +79,7 @@ export default function MacroManager() {
     useEffect(() => {
         refreshMacros();
         invoke<string>("get_record_hotkey").then(setRecordHotkey).catch(() => {});
+        invoke<boolean>("check_recording_permission").then(setHasPermission).catch(() => {});
 
         const unlistenRecording = listen<{ event_count: number }>(
             "macro-recording-progress",
@@ -328,6 +333,20 @@ export default function MacroManager() {
                     Record keyboard and mouse input, then replay it anytime.
                 </p>
             </div>
+
+            {hasPermission === false && (
+                <div className="bg-[#ff3366]/10 border border-[#ff3366]/40 text-sm rounded-lg px-4 py-3 space-y-1">
+                    <p className="font-medium text-[#ff3366]">Accessibility permission needed</p>
+                    <p className="text-gray-300">
+                        FragDesk can't record keyboard or mouse input until it's granted
+                        Accessibility access. Open{" "}
+                        <span className="font-mono text-gray-200">
+                            System Settings → Privacy &amp; Security → Accessibility
+                        </span>
+                        , enable FragDesk, then restart the app.
+                    </p>
+                </div>
+            )}
 
             {error && (
                 <div className="bg-[#ff3366]/10 border border-[#ff3366]/40 text-[#ff3366] text-sm rounded-lg px-4 py-2">
