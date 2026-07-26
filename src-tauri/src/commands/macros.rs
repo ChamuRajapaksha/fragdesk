@@ -1,7 +1,7 @@
 use crate::database::{
     delete_macro_item, get_macro_by_id, get_macro_id_by_hotkey, get_macros as db_get_macros,
-    init_database, insert_macro, rename_macro_item, set_macro_hotkey_item, MacroEvent, MacroItem,
-    MacroSummary,
+    get_setting, init_database, insert_macro, rename_macro_item, set_macro_hotkey_item,
+    set_setting, MacroEvent, MacroItem, MacroSummary,
 };
 use rdev::{listen, simulate, Button, EventType, Key};
 use serde::Serialize;
@@ -83,18 +83,81 @@ pub struct RecordingPreview {
     pub duration_ms: u64,
 }
 
-/// Fixed global hotkey that toggles recording on/off, independent of any
-/// per-macro playback hotkey. This exists specifically so recording can be
-/// started/stopped WITHOUT clicking an on-screen button — since capture is
-/// OS-global, clicking a "Stop Recording" button gets recorded as part of
-/// the macro, and replaying that click later can re-trigger whatever's at
-/// that screen position (including the record button itself, causing a
-/// start/stop loop). A keyboard-only toggle avoids that entirely.
-pub const RECORD_TOGGLE_HOTKEY: &str = "F9";
+/// The DB key under which the record-toggle hotkey is persisted (via the
+/// generic `settings` table).
+const RECORD_HOTKEY_SETTING_KEY: &str = "record_toggle_hotkey";
+
+/// Fallback used the very first time the app runs, before any hotkey has
+/// been saved.
+pub const DEFAULT_RECORD_HOTKEY: &str = "F9";
+
+/// Holds the *currently active* record-toggle hotkey in memory, so
+/// `handle_global_shortcut` can check incoming shortcuts against it
+/// without hitting SQLite on every keypress. Loaded from the `settings`
+/// table (or defaulted to `DEFAULT_RECORD_HOTKEY`) once in `lib.rs`'s
+/// `.setup()`, then kept in sync by `set_record_hotkey`. Manage with
+/// `.manage(RecordHotkeyState::new(initial_value))`.
+pub struct RecordHotkeyState {
+    pub current: Mutex<String>,
+}
+
+impl RecordHotkeyState {
+    pub fn new(initial: String) -> Self {
+        Self {
+            current: Mutex::new(initial),
+        }
+    }
+}
 
 #[tauri::command]
-pub fn get_record_hotkey() -> String {
-    RECORD_TOGGLE_HOTKEY.to_string()
+pub fn get_record_hotkey(state: tauri::State<'_, RecordHotkeyState>) -> String {
+    state.current.lock().unwrap().clone()
+}
+
+/// Remaps the record-toggle hotkey. Rejects the change if the requested
+/// combo is already assigned to a macro's playback hotkey, to avoid one
+/// key press ambiguously meaning two different things.
+#[tauri::command]
+pub fn set_record_hotkey(
+    app_handle: AppHandle,
+    state: tauri::State<'_, RecordHotkeyState>,
+    hotkey: String,
+) -> Result<(), String> {
+    let conn = init_database().map_err(|e| e.to_string())?;
+
+    if get_macro_id_by_hotkey(&conn, &hotkey)
+        .map_err(|e| e.to_string())?
+        .is_some()
+    {
+        return Err("That combo is already assigned to a macro's playback hotkey".to_string());
+    }
+
+    let old = state.current.lock().unwrap().clone();
+
+    app_handle
+        .global_shortcut()
+        .register(hotkey.as_str())
+        .map_err(|e| format!("Failed to register hotkey '{hotkey}': {e}"))?;
+
+    if old != hotkey {
+        let _ = app_handle.global_shortcut().unregister(old.as_str());
+    }
+
+    *state.current.lock().unwrap() = hotkey.clone();
+    set_setting(&conn, RECORD_HOTKEY_SETTING_KEY, &hotkey).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Reads the saved record-toggle hotkey from the `settings` table, falling
+/// back to `DEFAULT_RECORD_HOTKEY` if none has been set yet. Called once
+/// at startup, before any command/state machinery is available, so it
+/// takes a `Connection` directly rather than going through a command.
+pub fn load_record_hotkey(conn: &rusqlite::Connection) -> String {
+    get_setting(conn, RECORD_HOTKEY_SETTING_KEY)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| DEFAULT_RECORD_HOTKEY.to_string())
 }
 
 #[tauri::command]
@@ -297,7 +360,13 @@ pub fn stop_macro_playback(state: tauri::State<'_, MacroPlayback>) -> Result<(),
 /// at default speed/repeat (hotkeys don't carry per-play options — use the
 /// UI's Play button for that).
 pub fn handle_global_shortcut(app_handle: &AppHandle, shortcut_str: &str) {
-    if shortcut_str == RECORD_TOGGLE_HOTKEY {
+    let is_record_toggle = {
+        let record_hotkey = app_handle.state::<RecordHotkeyState>();
+        let current = record_hotkey.current.lock().unwrap().clone();
+        current == shortcut_str
+    };
+
+    if is_record_toggle {
         toggle_recording_via_hotkey(app_handle);
         return;
     }
