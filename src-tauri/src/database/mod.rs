@@ -41,7 +41,42 @@ pub fn init_database() -> Result<Connection> {
         [],
     )?;
 
+    // Migration: add hotkey column if it doesn't exist yet (older DBs won't
+    // have it). SQLite has no "ADD COLUMN IF NOT EXISTS", so we just ignore
+    // the error if the column is already there.
+    let _ = conn.execute("ALTER TABLE macros ADD COLUMN hotkey TEXT", []);
+
+    // Generic key-value settings store. Currently used for the
+    // record-toggle hotkey, but kept general so future app-wide
+    // preferences don't each need their own table.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
+        [],
+    )?;
+
     Ok(conn)
+}
+
+pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+    let mut rows = stmt.query(rusqlite::params![key])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(row.get(0)?))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![key, value],
+    )?;
+    Ok(())
 }
 
 fn get_db_path() -> PathBuf {
@@ -133,6 +168,7 @@ pub struct MacroSummary {
     pub created_at: i64,
     pub event_count: i32,
     pub duration_ms: i64,
+    pub hotkey: Option<String>,
 }
 
 /// Full macro including its event sequence, used for playback.
@@ -143,6 +179,7 @@ pub struct MacroItem {
     pub created_at: i64,
     pub event_count: i32,
     pub duration_ms: i64,
+    pub hotkey: Option<String>,
     pub events: Vec<MacroEvent>,
 }
 
@@ -168,7 +205,7 @@ pub fn insert_macro(
 
 pub fn get_macros(conn: &Connection) -> Result<Vec<MacroSummary>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, created_at, event_count, duration_ms
+        "SELECT id, name, created_at, event_count, duration_ms, hotkey
          FROM macros ORDER BY created_at DESC",
     )?;
 
@@ -179,6 +216,7 @@ pub fn get_macros(conn: &Connection) -> Result<Vec<MacroSummary>> {
             created_at: row.get(2)?,
             event_count: row.get(3)?,
             duration_ms: row.get(4)?,
+            hotkey: row.get(5)?,
         })
     })?;
 
@@ -192,7 +230,7 @@ pub fn get_macros(conn: &Connection) -> Result<Vec<MacroSummary>> {
 
 pub fn get_macro_by_id(conn: &Connection, id: &str) -> Result<Option<MacroItem>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, created_at, event_count, duration_ms, events_json
+        "SELECT id, name, created_at, event_count, duration_ms, events_json, hotkey
          FROM macros WHERE id = ?1",
     )?;
 
@@ -209,6 +247,7 @@ pub fn get_macro_by_id(conn: &Connection, id: &str) -> Result<Option<MacroItem>>
             event_count: row.get(3)?,
             duration_ms: row.get(4)?,
             events,
+            hotkey: row.get(6)?,
         }))
     } else {
         Ok(None)
@@ -226,4 +265,39 @@ pub fn rename_macro_item(conn: &Connection, id: &str, name: &str) -> Result<()> 
         rusqlite::params![name, id],
     )?;
     Ok(())
+}
+
+pub fn set_macro_hotkey_item(conn: &Connection, id: &str, hotkey: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE macros SET hotkey = ?1 WHERE id = ?2",
+        rusqlite::params![hotkey, id],
+    )?;
+    Ok(())
+}
+
+/// Returns the id of whichever macro (if any) already owns this hotkey
+/// string, so callers can detect conflicts before assigning it elsewhere.
+pub fn get_macro_id_by_hotkey(conn: &Connection, hotkey: &str) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT id FROM macros WHERE hotkey = ?1")?;
+    let mut rows = stmt.query(rusqlite::params![hotkey])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(row.get(0)?))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Loads every (hotkey, macro_id) pair currently saved, so they can be
+/// re-registered with the OS on app startup.
+pub fn load_hotkey_map(conn: &Connection) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare("SELECT hotkey, id FROM macros WHERE hotkey IS NOT NULL")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    let mut result = Vec::new();
+    for r in rows {
+        result.push(r?);
+    }
+    Ok(result)
 }
