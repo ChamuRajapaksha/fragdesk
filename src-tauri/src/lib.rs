@@ -13,6 +13,7 @@ use commands::macros::{
     RECORD_TOGGLE_HOTKEY,
 };
 use commands::monitor::{get_cpu_per_core, get_system_stats};
+use commands::permissions::check_recording_permission;
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -97,6 +98,7 @@ pub fn run() {
             stop_macro_playback,
             set_macro_hotkey,
             get_record_hotkey,
+            check_recording_permission,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
