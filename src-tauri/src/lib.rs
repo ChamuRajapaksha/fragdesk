@@ -8,9 +8,9 @@ use commands::clipboard::{
 };
 use commands::macros::{
     delete_macro, discard_macro_recording, get_macros, get_record_hotkey, handle_global_shortcut,
-    play_macro, rename_macro, save_macro_recording, set_macro_hotkey, start_macro_recording,
-    stop_macro_playback, stop_macro_recording, HotkeyRegistry, MacroPlayback, MacroRecorder,
-    RECORD_TOGGLE_HOTKEY,
+    load_record_hotkey, play_macro, rename_macro, save_macro_recording, set_macro_hotkey,
+    set_record_hotkey, start_macro_recording, stop_macro_playback, stop_macro_recording,
+    HotkeyRegistry, MacroPlayback, MacroRecorder, RecordHotkeyState,
 };
 use commands::monitor::{get_cpu_per_core, get_system_stats};
 use commands::permissions::check_recording_permission;
@@ -44,16 +44,20 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            // Register the fixed record-toggle hotkey (F9 by default).
-            if let Err(err) = handle.global_shortcut().register(RECORD_TOGGLE_HOTKEY) {
-                eprintln!(
-                    "[macros] failed to register record-toggle hotkey '{RECORD_TOGGLE_HOTKEY}': {err}"
-                );
-            }
-
-            // Re-register any per-macro playback hotkeys saved from a
-            // previous session.
+            // Load whichever record-toggle hotkey was saved last (or the
+            // "F9" default on first run), register it, and make it
+            // available to commands/the shortcut handler via managed state.
             if let Ok(conn) = database::init_database() {
+                let hotkey = load_record_hotkey(&conn);
+
+                if let Err(err) = handle.global_shortcut().register(hotkey.as_str()) {
+                    eprintln!("[macros] failed to register record-toggle hotkey '{hotkey}': {err}");
+                }
+
+                app.manage(RecordHotkeyState::new(hotkey));
+
+                // Re-register any per-macro playback hotkeys saved from a
+                // previous session.
                 if let Ok(pairs) = database::load_hotkey_map(&conn) {
                     let registry = handle.state::<HotkeyRegistry>();
                     for (hotkey, macro_id) in pairs {
@@ -69,6 +73,12 @@ pub fn run() {
                         }
                     }
                 }
+            } else {
+                // DB couldn't open at all -- still manage a default state
+                // so commands don't panic looking it up.
+                app.manage(RecordHotkeyState::new(
+                    commands::macros::DEFAULT_RECORD_HOTKEY.to_string(),
+                ));
             }
             Ok(())
         })
@@ -98,6 +108,7 @@ pub fn run() {
             stop_macro_playback,
             set_macro_hotkey,
             get_record_hotkey,
+            set_record_hotkey,
             check_recording_permission,
         ])
         .run(tauri::generate_context!())
