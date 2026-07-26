@@ -46,7 +46,37 @@ pub fn init_database() -> Result<Connection> {
     // the error if the column is already there.
     let _ = conn.execute("ALTER TABLE macros ADD COLUMN hotkey TEXT", []);
 
+    // Generic key-value settings store. Currently used for the
+    // record-toggle hotkey, but kept general so future app-wide
+    // preferences don't each need their own table.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
+        [],
+    )?;
+
     Ok(conn)
+}
+
+pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+    let mut rows = stmt.query(rusqlite::params![key])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(row.get(0)?))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![key, value],
+    )?;
+    Ok(())
 }
 
 fn get_db_path() -> PathBuf {
