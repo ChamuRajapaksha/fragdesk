@@ -67,6 +67,7 @@ export default function MacroManager() {
     // The fixed record-toggle hotkey (default "F9"), fetched from the
     // backend so the displayed tip stays in sync if it's ever changed there.
     const [recordHotkey, setRecordHotkey] = useState<string>("F9");
+    const [isCapturingRecordHotkey, setIsCapturingRecordHotkey] = useState(false);
 
     // macOS Accessibility permission — null while unchecked, so the banner
     // doesn't flash on platforms where it's always true.
@@ -176,6 +177,35 @@ export default function MacroManager() {
         document.addEventListener("keydown", onKeyDown, true);
         return () => document.removeEventListener("keydown", onKeyDown, true);
     }, [capturingHotkeyId]);
+
+    useEffect(() => {
+        if (!isCapturingRecordHotkey) return;
+
+        function onKeyDown(e: KeyboardEvent) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (e.key === "Escape") {
+                setIsCapturingRecordHotkey(false);
+                return;
+            }
+            if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return;
+
+            const mods: string[] = [];
+            if (e.ctrlKey || e.metaKey) mods.push("CommandOrControl");
+            if (e.altKey) mods.push("Alt");
+            if (e.shiftKey) mods.push("Shift");
+            const combo = [...mods, e.code].join("+");
+
+            invoke("set_record_hotkey", { hotkey: combo })
+                .then(() => setRecordHotkey(combo))
+                .catch((err) => setError(String(err)))
+                .finally(() => setIsCapturingRecordHotkey(false));
+        }
+
+        document.addEventListener("keydown", onKeyDown, true);
+        return () => document.removeEventListener("keydown", onKeyDown, true);
+    }, [isCapturingRecordHotkey]);
 
     async function refreshMacros() {
         try {
@@ -358,9 +388,21 @@ export default function MacroManager() {
             <div className="bg-[#141933] rounded-xl p-5 border border-white/5">
                 <p className="text-xs text-gray-500 mb-3">
                     Tip: press{" "}
-                    <span className="font-mono text-[#00d9ff]">{recordHotkey}</span> anywhere to
-                    start/stop instead of clicking below — clicking the button while recording
-                    gets captured as part of the macro itself.
+                    {isCapturingRecordHotkey ? (
+                        <span className="font-mono text-[#b026ff] animate-pulse">
+                            Press a key combo... (Esc to cancel)
+                        </span>
+                    ) : (
+                        <button
+                            onClick={() => setIsCapturingRecordHotkey(true)}
+                            className="font-mono text-[#00d9ff] hover:underline"
+                            title="Click to change"
+                        >
+                            {recordHotkey}
+                        </button>
+                    )}{" "}
+                    anywhere to start/stop instead of clicking below — clicking the button while
+                    recording gets captured as part of the macro itself.
                 </p>
                 {!pendingPreview ? (
                     <div className="flex items-center justify-between">
