@@ -18,7 +18,7 @@ const features = [
     icon: Zap,
     color: 'text-frag-accent',
     bgColor: 'bg-frag-accent/10',
-    status: 'Coming Soon',
+    status: 'Available',
   },
   {
     id: 'monitor',
