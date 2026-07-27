@@ -9,7 +9,7 @@ const features = [
     icon: Clipboard,
     color: 'text-frag-primary',
     bgColor: 'bg-frag-primary/10',
-    status: 'Coming Soon',
+    status: 'Available',
   },
   {
     id: 'macros',
@@ -18,7 +18,7 @@ const features = [
     icon: Zap,
     color: 'text-frag-accent',
     bgColor: 'bg-frag-accent/10',
-    status: 'Coming Soon',
+    status: 'Available',
   },
   {
     id: 'monitor',
@@ -27,7 +27,7 @@ const features = [
     icon: Activity,
     color: 'text-frag-success',
     bgColor: 'bg-frag-success/10',
-    status: 'Coming Soon',
+    status: 'Available',
   },
 ];
 
