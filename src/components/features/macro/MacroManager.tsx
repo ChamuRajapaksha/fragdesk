@@ -76,6 +76,7 @@ export default function MacroManager() {
     const nameInputRef = useRef<HTMLInputElement>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
     const confirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const importFileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         refreshMacros();
@@ -335,6 +336,39 @@ export default function MacroManager() {
         }
     }
 
+    async function handleExport(m: MacroSummary) {
+        try {
+            const json = await invoke<string>("export_macro_json", { id: m.id });
+            const blob = new Blob([json], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${m.name.replace(/[^a-z0-9-_ ]/gi, "_")}.fragdesk-macro.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            setError(String(err));
+        }
+    }
+
+    function handleImportClick() {
+        importFileInputRef.current?.click();
+    }
+
+    async function handleImportFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        e.target.value = ""; // allow re-selecting the same file later
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            await invoke("import_macro_json", { json: text });
+            await refreshMacros();
+        } catch (err) {
+            setError(String(err));
+        }
+    }
+
     async function handleSetHotkey(id: string, hotkey: string) {
         try {
             await invoke("set_macro_hotkey", { id, hotkey });
@@ -500,6 +534,24 @@ export default function MacroManager() {
 
             {/* Macro list */}
             <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-medium text-gray-400">Your macros</h2>
+                    <div>
+                        <input
+                            ref={importFileInputRef}
+                            type="file"
+                            accept=".json"
+                            onChange={handleImportFileChange}
+                            className="hidden"
+                        />
+                        <button
+                            onClick={handleImportClick}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 font-medium"
+                        >
+                            Import macro
+                        </button>
+                    </div>
+                </div>
                 {macros.length === 0 ? (
                     <p className="text-gray-500 text-sm">No macros yet — record one above.</p>
                 ) : (
@@ -601,6 +653,13 @@ export default function MacroManager() {
                                             Play
                                         </button>
                                     )}
+                                    <button
+                                        onClick={() => handleExport(m)}
+                                        disabled={isThisPlaying}
+                                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Export
+                                    </button>
                                     <button
                                         onClick={() => handleDeleteClick(m.id)}
                                         disabled={isThisPlaying}
