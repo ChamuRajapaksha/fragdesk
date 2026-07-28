@@ -4,7 +4,7 @@ use crate::database::{
     set_setting, MacroEvent, MacroItem, MacroSummary,
 };
 use rdev::{listen, simulate, Button, EventType, Key};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -275,6 +275,78 @@ pub fn rename_macro(id: String, name: String) -> Result<(), String> {
     rename_macro_item(&conn, &id, &name).map_err(|e| e.to_string())
 }
 
+/// On-disk shape for a shared macro file. Deliberately its own struct
+/// (not `MacroItem`) so the exported format can evolve independently of
+/// the internal DB schema, and so we don't leak DB-only fields like `id`
+/// (meaningless on another machine) or `hotkey` (actively wrong to carry
+/// over -- it might collide with something already bound there).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MacroExport {
+    pub format_version: u32,
+    pub name: String,
+    pub exported_at: i64,
+    pub events: Vec<MacroEvent>,
+}
+
+const MACRO_EXPORT_FORMAT_VERSION: u32 = 1;
+
+/// Returns a pretty-printed JSON string for the given macro. The frontend
+/// triggers the actual file save via a plain browser Blob download --
+/// no Tauri dialog/fs plugin needed for this.
+#[tauri::command]
+pub fn export_macro_json(id: String) -> Result<String, String> {
+    let conn = init_database().map_err(|e| e.to_string())?;
+    let macro_item = get_macro_by_id(&conn, &id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Macro not found".to_string())?;
+
+    let export = MacroExport {
+        format_version: MACRO_EXPORT_FORMAT_VERSION,
+        name: macro_item.name,
+        exported_at: chrono::Utc::now().timestamp(),
+        events: macro_item.events,
+    };
+
+    serde_json::to_string_pretty(&export).map_err(|e| e.to_string())
+}
+
+/// Imports a macro from JSON text (read on the frontend via a plain
+/// `<input type="file">` + FileReader, no plugin needed). Always assigns
+/// a fresh id, so importing never collides with an existing macro --
+/// even re-importing the same file twice just creates a second copy.
+#[tauri::command]
+pub fn import_macro_json(json: String) -> Result<MacroSummary, String> {
+    let export: MacroExport =
+        serde_json::from_str(&json).map_err(|e| format!("Couldn't parse macro file: {e}"))?;
+
+    if export.format_version > MACRO_EXPORT_FORMAT_VERSION {
+        return Err(
+            "This macro file was exported by a newer version of FragDesk and can't be read yet"
+                .to_string(),
+        );
+    }
+
+    if export.events.is_empty() {
+        return Err("This macro file has no recorded events".to_string());
+    }
+
+    let duration_ms: u64 = export.events.iter().map(event_delay_ms).sum();
+    let id = Uuid::new_v4().to_string();
+
+    let conn = init_database().map_err(|e| e.to_string())?;
+    insert_macro(&conn, &id, &export.name, &export.events, duration_ms as i64)
+        .map_err(|e| e.to_string())?;
+
+    Ok(MacroSummary {
+        id,
+        name: export.name,
+        created_at: chrono::Utc::now().timestamp(),
+        event_count: export.events.len() as i32,
+        duration_ms: duration_ms as i64,
+        hotkey: None,
+    })
+}
+
 /// Assigns (or clears, if `hotkey` is `None`) a global hotkey for a macro.
 /// Registers/unregisters with the OS via `tauri-plugin-global-shortcut`
 /// and keeps the in-memory `HotkeyRegistry` + the DB column in sync.
@@ -352,6 +424,73 @@ pub fn play_macro(
 pub fn stop_macro_playback(state: tauri::State<'_, MacroPlayback>) -> Result<(), String> {
     state.cancel.store(true, Ordering::SeqCst);
     Ok(())
+}
+
+/// The on-disk shape of an exported macro file. Deliberately excludes
+/// `id`, `created_at`, and `hotkey` — those are local-machine specifics
+/// that shouldn't travel with a shared file (a hotkey in particular might
+/// collide with something already assigned on the importing machine).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportedMacro {
+    pub format_version: u32,
+    pub name: String,
+    pub event_count: i32,
+    pub duration_ms: i64,
+    pub events: Vec<MacroEvent>,
+}
+
+/// Writes a macro to a `.json` file at `path` (already chosen by the
+/// frontend via a save dialog). Plain `std::fs`, not a Tauri fs-plugin
+/// command, since this runs entirely on the Rust side.
+#[tauri::command]
+pub fn export_macro_to_file(id: String, path: String) -> Result<(), String> {
+    let conn = init_database().map_err(|e| e.to_string())?;
+    let macro_item = get_macro_by_id(&conn, &id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Macro not found".to_string())?;
+
+    let exported = ExportedMacro {
+        format_version: 1,
+        name: macro_item.name,
+        event_count: macro_item.event_count,
+        duration_ms: macro_item.duration_ms,
+        events: macro_item.events,
+    };
+
+    let json = serde_json::to_string_pretty(&exported).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| format!("Failed to write file: {e}"))?;
+    Ok(())
+}
+
+/// Reads a `.json` macro file at `path` (already chosen via an open
+/// dialog) and inserts it as a new macro, distinct from wherever it was
+/// originally recorded (fresh id, fresh created_at, no hotkey assigned).
+#[tauri::command]
+pub fn import_macro_from_file(path: String) -> Result<MacroSummary, String> {
+    let contents =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {e}"))?;
+    let exported: ExportedMacro =
+        serde_json::from_str(&contents).map_err(|e| format!("Invalid macro file: {e}"))?;
+
+    if exported.events.is_empty() {
+        return Err("This macro file has no events".to_string());
+    }
+
+    let id = Uuid::new_v4().to_string();
+    let duration_ms: u64 = exported.events.iter().map(event_delay_ms).sum();
+
+    let conn = init_database().map_err(|e| e.to_string())?;
+    insert_macro(&conn, &id, &exported.name, &exported.events, duration_ms as i64)
+        .map_err(|e| e.to_string())?;
+
+    Ok(MacroSummary {
+        id,
+        name: exported.name,
+        created_at: chrono::Utc::now().timestamp(),
+        event_count: exported.events.len() as i32,
+        duration_ms: duration_ms as i64,
+        hotkey: None,
+    })
 }
 
 /// Called from `tauri_plugin_global_shortcut`'s handler when a registered
