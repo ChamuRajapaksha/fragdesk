@@ -9,6 +9,7 @@ interface MacroSummary {
     event_count: number;
     duration_ms: number;
     hotkey: string | null;
+    tags: string[];
 }
 
 interface RecordingPreview {
@@ -73,9 +74,16 @@ export default function MacroManager() {
     // doesn't flash on platforms where it's always true.
     const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
+    // Tag filtering: selected tags act as an OR filter over the list.
+    const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
+    // Which macro id currently has its "add a tag" input open.
+    const [addingTagToId, setAddingTagToId] = useState<string | null>(null);
+    const [tagDraft, setTagDraft] = useState("");
+
     const nameInputRef = useRef<HTMLInputElement>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
     const confirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const importFileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         refreshMacros();
@@ -335,6 +343,39 @@ export default function MacroManager() {
         }
     }
 
+    async function handleExport(m: MacroSummary) {
+        try {
+            const json = await invoke<string>("export_macro_json", { id: m.id });
+            const blob = new Blob([json], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${m.name.replace(/[^a-z0-9-_ ]/gi, "_")}.fragdesk-macro.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            setError(String(err));
+        }
+    }
+
+    function handleImportClick() {
+        importFileInputRef.current?.click();
+    }
+
+    async function handleImportFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        e.target.value = ""; // allow re-selecting the same file later
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            await invoke("import_macro_json", { json: text });
+            await refreshMacros();
+        } catch (err) {
+            setError(String(err));
+        }
+    }
+
     async function handleSetHotkey(id: string, hotkey: string) {
         try {
             await invoke("set_macro_hotkey", { id, hotkey });
@@ -354,6 +395,45 @@ export default function MacroManager() {
             setError(String(err));
         }
     }
+
+    async function handleAddTag(m: MacroSummary) {
+        const tag = tagDraft.trim();
+        setTagDraft("");
+        setAddingTagToId(null);
+        if (!tag || m.tags.includes(tag)) return;
+
+        const newTags = [...m.tags, tag];
+        setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
+        try {
+            await invoke("set_macro_tags", { id: m.id, tags: newTags });
+        } catch (err) {
+            setError(String(err));
+            await refreshMacros();
+        }
+    }
+
+    async function handleRemoveTag(m: MacroSummary, tag: string) {
+        const newTags = m.tags.filter((t) => t !== tag);
+        setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
+        try {
+            await invoke("set_macro_tags", { id: m.id, tags: newTags });
+        } catch (err) {
+            setError(String(err));
+            await refreshMacros();
+        }
+    }
+
+    function toggleTagFilter(tag: string) {
+        setActiveTagFilters((prev) =>
+            prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+        );
+    }
+
+    const allTags = Array.from(new Set(macros.flatMap((m) => m.tags))).sort();
+    const visibleMacros =
+        activeTagFilters.length === 0
+            ? macros
+            : macros.filter((m) => m.tags.some((t) => activeTagFilters.includes(t)));
 
     return (
         <div className="min-h-full bg-[#0a0e27] text-white p-6 space-y-6">
@@ -500,10 +580,58 @@ export default function MacroManager() {
 
             {/* Macro list */}
             <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-medium text-gray-400">Your macros</h2>
+                    <div>
+                        <input
+                            ref={importFileInputRef}
+                            type="file"
+                            accept=".json"
+                            onChange={handleImportFileChange}
+                            className="hidden"
+                        />
+                        <button
+                            onClick={handleImportClick}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 font-medium"
+                        >
+                            Import macro
+                        </button>
+                    </div>
+                </div>
+                {allTags.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pb-1">
+                        {allTags.map((tag) => {
+                            const active = activeTagFilters.includes(tag);
+                            return (
+                                <button
+                                    key={tag}
+                                    onClick={() => toggleTagFilter(tag)}
+                                    className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                                        active
+                                            ? "bg-[#00d9ff]/15 border-[#00d9ff]/50 text-[#00d9ff]"
+                                            : "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200"
+                                    }`}
+                                >
+                                    {tag}
+                                </button>
+                            );
+                        })}
+                        {activeTagFilters.length > 0 && (
+                            <button
+                                onClick={() => setActiveTagFilters([])}
+                                className="text-xs text-gray-500 hover:text-gray-300 ml-1"
+                            >
+                                clear filters
+                            </button>
+                        )}
+                    </div>
+                )}
                 {macros.length === 0 ? (
                     <p className="text-gray-500 text-sm">No macros yet — record one above.</p>
+                ) : visibleMacros.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No macros match the selected tags.</p>
                 ) : (
-                    macros.map((m) => {
+                    visibleMacros.map((m) => {
                         const isThisPlaying = playingId === m.id;
                         const isRenamingThis = renamingId === m.id;
                         const isConfirmingDelete = confirmDeleteId === m.id;
@@ -566,6 +694,47 @@ export default function MacroManager() {
                                             </button>
                                         )}
                                     </div>
+                                    <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                                        {m.tags.map((tag) => (
+                                            <span
+                                                key={tag}
+                                                className="inline-flex items-center gap-1 text-xs bg-white/5 text-gray-300 rounded-full px-2 py-0.5"
+                                            >
+                                                {tag}
+                                                <button
+                                                    onClick={() => handleRemoveTag(m, tag)}
+                                                    className="text-gray-500 hover:text-[#ff3366]"
+                                                >
+                                                    ×
+                                                </button>
+                                            </span>
+                                        ))}
+                                        {addingTagToId === m.id ? (
+                                            <input
+                                                autoFocus
+                                                type="text"
+                                                value={tagDraft}
+                                                onChange={(e) => setTagDraft(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") handleAddTag(m);
+                                                    if (e.key === "Escape") {
+                                                        setAddingTagToId(null);
+                                                        setTagDraft("");
+                                                    }
+                                                }}
+                                                onBlur={() => handleAddTag(m)}
+                                                placeholder="tag name"
+                                                className="text-xs bg-[#0a0e27] border border-white/10 rounded-full px-2 py-0.5 w-24 focus:outline-none focus:border-[#00d9ff]"
+                                            />
+                                        ) : (
+                                            <button
+                                                onClick={() => setAddingTagToId(m.id)}
+                                                className="text-xs text-gray-500 hover:text-[#00d9ff]"
+                                            >
+                                                + tag
+                                            </button>
+                                        )}
+                                    </div>
                                     {isThisPlaying && progress && (
                                         <div className="mt-2 w-64">
                                             <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -601,6 +770,13 @@ export default function MacroManager() {
                                             Play
                                         </button>
                                     )}
+                                    <button
+                                        onClick={() => handleExport(m)}
+                                        disabled={isThisPlaying}
+                                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        Export
+                                    </button>
                                     <button
                                         onClick={() => handleDeleteClick(m.id)}
                                         disabled={isThisPlaying}

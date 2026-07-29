@@ -7,10 +7,11 @@ use commands::clipboard::{
     ClipboardMonitor,
 };
 use commands::macros::{
-    delete_macro, discard_macro_recording, get_macros, get_record_hotkey, handle_global_shortcut,
-    load_record_hotkey, play_macro, rename_macro, save_macro_recording, set_macro_hotkey,
-    set_record_hotkey, start_macro_recording, stop_macro_playback, stop_macro_recording,
-    HotkeyRegistry, MacroPlayback, MacroRecorder, RecordHotkeyState,
+    delete_macro, discard_macro_recording, export_macro_json, get_macros, get_record_hotkey,
+    handle_global_shortcut, import_macro_json, load_record_hotkey, play_macro, rename_macro,
+    save_macro_recording, set_macro_hotkey, set_macro_tags, set_record_hotkey,
+    start_macro_recording, stop_macro_playback, stop_macro_recording, HotkeyRegistry,
+    MacroPlayback, MacroRecorder, RecordHotkeyState,
 };
 use commands::monitor::{get_cpu_per_core, get_system_stats};
 use commands::permissions::check_recording_permission;
@@ -110,6 +111,9 @@ pub fn run() {
             get_record_hotkey,
             set_record_hotkey,
             check_recording_permission,
+            export_macro_json,
+            import_macro_json,
+            set_macro_tags,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
