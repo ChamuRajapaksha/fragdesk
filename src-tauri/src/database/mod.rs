@@ -46,6 +46,11 @@ pub fn init_database() -> Result<Connection> {
     // the error if the column is already there.
     let _ = conn.execute("ALTER TABLE macros ADD COLUMN hotkey TEXT", []);
 
+    // Migration: add tags column (JSON array of strings, e.g. '["Combat","Utility"]').
+    // NULL/missing is treated identically to an empty array everywhere this
+    // is read, so existing macros don't need backfilling.
+    let _ = conn.execute("ALTER TABLE macros ADD COLUMN tags TEXT", []);
+
     // Generic key-value settings store. Currently used for the
     // record-toggle hotkey, but kept general so future app-wide
     // preferences don't each need their own table.
@@ -169,6 +174,7 @@ pub struct MacroSummary {
     pub event_count: i32,
     pub duration_ms: i64,
     pub hotkey: Option<String>,
+    pub tags: Vec<String>,
 }
 
 /// Full macro including its event sequence, used for playback.
@@ -180,7 +186,15 @@ pub struct MacroItem {
     pub event_count: i32,
     pub duration_ms: i64,
     pub hotkey: Option<String>,
+    pub tags: Vec<String>,
     pub events: Vec<MacroEvent>,
+}
+
+/// Parses the `tags` column, which is a JSON array of strings or NULL.
+/// NULL (never-set) is treated the same as an empty array everywhere.
+fn parse_tags(raw: Option<String>) -> Vec<String> {
+    raw.and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
 }
 
 pub fn insert_macro(
@@ -205,7 +219,7 @@ pub fn insert_macro(
 
 pub fn get_macros(conn: &Connection) -> Result<Vec<MacroSummary>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, created_at, event_count, duration_ms, hotkey
+        "SELECT id, name, created_at, event_count, duration_ms, hotkey, tags
          FROM macros ORDER BY created_at DESC",
     )?;
 
@@ -217,6 +231,7 @@ pub fn get_macros(conn: &Connection) -> Result<Vec<MacroSummary>> {
             event_count: row.get(3)?,
             duration_ms: row.get(4)?,
             hotkey: row.get(5)?,
+            tags: parse_tags(row.get(6)?),
         })
     })?;
 
@@ -230,7 +245,7 @@ pub fn get_macros(conn: &Connection) -> Result<Vec<MacroSummary>> {
 
 pub fn get_macro_by_id(conn: &Connection, id: &str) -> Result<Option<MacroItem>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, created_at, event_count, duration_ms, events_json, hotkey
+        "SELECT id, name, created_at, event_count, duration_ms, events_json, hotkey, tags
          FROM macros WHERE id = ?1",
     )?;
 
@@ -248,10 +263,21 @@ pub fn get_macro_by_id(conn: &Connection, id: &str) -> Result<Option<MacroItem>>
             duration_ms: row.get(4)?,
             events,
             hotkey: row.get(6)?,
+            tags: parse_tags(row.get(7)?),
         }))
     } else {
         Ok(None)
     }
+}
+
+pub fn set_macro_tags(conn: &Connection, id: &str, tags: &[String]) -> Result<()> {
+    let tags_json = serde_json::to_string(tags)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    conn.execute(
+        "UPDATE macros SET tags = ?1 WHERE id = ?2",
+        rusqlite::params![tags_json, id],
+    )?;
+    Ok(())
 }
 
 pub fn delete_macro_item(conn: &Connection, id: &str) -> Result<()> {
