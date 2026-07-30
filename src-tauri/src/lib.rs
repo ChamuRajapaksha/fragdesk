@@ -1,5 +1,6 @@
 mod database;
 mod commands;
+mod fragments;
 
 use commands::clipboard::{
     copy_to_clipboard, delete_clipboard, get_clipboard_items, get_current_clipboard,
