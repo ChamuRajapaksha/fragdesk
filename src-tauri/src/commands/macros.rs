@@ -3,8 +3,9 @@ use crate::database::{
     get_setting, init_database, insert_macro, rename_macro_item, set_macro_hotkey_item,
     set_macro_tags as db_set_macro_tags, set_setting, MacroEvent, MacroItem, MacroSummary,
 };
+use crate::fragments::{Fragment, FragmentPayload, FRAGMENT_FORMAT_VERSION};
 use rdev::{listen, simulate, Button, EventType, Key};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -282,24 +283,10 @@ pub fn set_macro_tags(id: String, tags: Vec<String>) -> Result<(), String> {
     db_set_macro_tags(&conn, &id, &tags).map_err(|e| e.to_string())
 }
 
-/// On-disk shape for a shared macro file. Deliberately its own struct
-/// (not `MacroItem`) so the exported format can evolve independently of
-/// the internal DB schema, and so we don't leak DB-only fields like `id`
-/// (meaningless on another machine) or `hotkey` (actively wrong to carry
-/// over -- it might collide with something already bound there).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MacroExport {
-    pub format_version: u32,
-    pub name: String,
-    pub exported_at: i64,
-    pub events: Vec<MacroEvent>,
-}
-
-const MACRO_EXPORT_FORMAT_VERSION: u32 = 1;
-
-/// Returns a pretty-printed JSON string for the given macro. The frontend
-/// triggers the actual file save via a plain browser Blob download --
-/// no Tauri dialog/fs plugin needed for this.
+/// Returns a pretty-printed JSON string for the given macro, wrapped in
+/// the shared `Fragment` envelope (see `crate::fragments`). The frontend
+/// triggers the actual file save via a plain browser Blob download -- no
+/// Tauri dialog/fs plugin needed for this.
 #[tauri::command]
 pub fn export_macro_json(id: String) -> Result<String, String> {
     let conn = init_database().map_err(|e| e.to_string())?;
@@ -307,51 +294,60 @@ pub fn export_macro_json(id: String) -> Result<String, String> {
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Macro not found".to_string())?;
 
-    let export = MacroExport {
-        format_version: MACRO_EXPORT_FORMAT_VERSION,
+    let fragment = Fragment {
+        format_version: FRAGMENT_FORMAT_VERSION,
         name: macro_item.name,
+        tags: macro_item.tags,
         exported_at: chrono::Utc::now().timestamp(),
-        events: macro_item.events,
+        payload: FragmentPayload::Macro {
+            events: macro_item.events,
+        },
     };
 
-    serde_json::to_string_pretty(&export).map_err(|e| e.to_string())
+    serde_json::to_string_pretty(&fragment).map_err(|e| e.to_string())
 }
 
-/// Imports a macro from JSON text (read on the frontend via a plain
-/// `<input type="file">` + FileReader, no plugin needed). Always assigns
-/// a fresh id, so importing never collides with an existing macro --
-/// even re-importing the same file twice just creates a second copy.
+/// Imports a macro fragment from JSON text (read on the frontend via a
+/// plain `<input type="file">` + FileReader, no plugin needed). Always
+/// assigns a fresh id, so importing never collides with an existing
+/// macro -- even re-importing the same file twice just creates a second
+/// copy. Tags carry over from the fragment; hotkey never does.
 #[tauri::command]
 pub fn import_macro_json(json: String) -> Result<MacroSummary, String> {
-    let export: MacroExport =
-        serde_json::from_str(&json).map_err(|e| format!("Couldn't parse macro file: {e}"))?;
+    let fragment: Fragment =
+        serde_json::from_str(&json).map_err(|e| format!("Couldn't parse fragment file: {e}"))?;
 
-    if export.format_version > MACRO_EXPORT_FORMAT_VERSION {
+    if fragment.format_version > FRAGMENT_FORMAT_VERSION {
         return Err(
-            "This macro file was exported by a newer version of FragDesk and can't be read yet"
+            "This fragment was exported by a newer version of FragDesk and can't be read yet"
                 .to_string(),
         );
     }
 
-    if export.events.is_empty() {
+    let FragmentPayload::Macro { events } = fragment.payload;
+
+    if events.is_empty() {
         return Err("This macro file has no recorded events".to_string());
     }
 
-    let duration_ms: u64 = export.events.iter().map(event_delay_ms).sum();
+    let duration_ms: u64 = events.iter().map(event_delay_ms).sum();
     let id = Uuid::new_v4().to_string();
 
     let conn = init_database().map_err(|e| e.to_string())?;
-    insert_macro(&conn, &id, &export.name, &export.events, duration_ms as i64)
+    insert_macro(&conn, &id, &fragment.name, &events, duration_ms as i64)
         .map_err(|e| e.to_string())?;
+    if !fragment.tags.is_empty() {
+        db_set_macro_tags(&conn, &id, &fragment.tags).map_err(|e| e.to_string())?;
+    }
 
     Ok(MacroSummary {
         id,
-        name: export.name,
+        name: fragment.name,
         created_at: chrono::Utc::now().timestamp(),
-        event_count: export.events.len() as i32,
+        event_count: events.len() as i32,
         duration_ms: duration_ms as i64,
         hotkey: None,
-        tags: Vec::new(),
+        tags: fragment.tags,
     })
 }
 
