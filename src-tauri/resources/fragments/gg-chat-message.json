@@ -1,0 +1,17 @@
+{
+  "format_version": 1,
+  "name": "Type \"gg\" + Enter",
+  "tags": ["demo", "chat"],
+  "exported_at": 1735689600,
+  "fragment_type": "macro",
+  "payload": {
+    "events": [
+      { "type": "KeyDown", "key": "KeyG", "delay_ms": 0 },
+      { "type": "KeyUp", "key": "KeyG", "delay_ms": 60 },
+      { "type": "KeyDown", "key": "KeyG", "delay_ms": 80 },
+      { "type": "KeyUp", "key": "KeyG", "delay_ms": 60 },
+      { "type": "KeyDown", "key": "Return", "delay_ms": 120 },
+      { "type": "KeyUp", "key": "Return", "delay_ms": 60 }
+    ]
+  }
+}

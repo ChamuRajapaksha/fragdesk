@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "name": "Quick Double-Click",
+  "tags": ["demo", "utility"],
+  "exported_at": 1735689600,
+  "fragment_type": "macro",
+  "payload": {
+    "events": [
+      { "type": "MouseDown", "button": "Left", "delay_ms": 0 },
+      { "type": "MouseUp", "button": "Left", "delay_ms": 40 },
+      { "type": "MouseDown", "button": "Left", "delay_ms": 90 },
+      { "type": "MouseUp", "button": "Left", "delay_ms": 40 }
+    ]
+  }
+}
