@@ -351,6 +351,130 @@ pub fn import_macro_json(json: String) -> Result<MacroSummary, String> {
     })
 }
 
+/// Lightweight summary of a bundled fragment for the library browser --
+/// parsed generically via `serde_json::Value` rather than the typed
+/// `Fragment` struct, so listing doesn't break if a bundled file uses a
+/// `fragment_type` this build doesn't have a variant for yet (a future
+/// clipboard-snippet or tip fragment, say). Only the actual import step
+/// needs the fully-typed shape.
+#[derive(Debug, Clone, Serialize)]
+pub struct BundledFragmentSummary {
+    pub filename: String,
+    pub fragment_type: String,
+    pub name: String,
+    pub tags: Vec<String>,
+    pub format_version: u32,
+}
+
+/// Resolves the bundled `resources/fragments` directory, which works
+/// identically whether running via `tauri dev` or a packaged build, as
+/// long as it's declared under `bundle.resources` in `tauri.conf.json`.
+fn fragments_resource_dir(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
+    app_handle
+        .path()
+        .resolve("resources/fragments", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("Failed to locate bundled fragments directory: {e}"))
+}
+
+/// Lists every bundled fragment shipped with the app (the "starter pack"
+/// -- curated content baked into the binary, no server involved). Skips
+/// any file that fails to parse rather than failing the whole list, since
+/// one malformed sample shouldn't hide the rest.
+#[tauri::command]
+pub fn list_bundled_fragments(
+    app_handle: AppHandle,
+) -> Result<Vec<BundledFragmentSummary>, String> {
+    let dir = fragments_resource_dir(&app_handle)?;
+
+    let entries = std::fs::read_dir(&dir)
+        .map_err(|e| format!("Failed to read bundled fragments directory: {e}"))?;
+
+    let mut result = Vec::new();
+
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) else {
+            continue;
+        };
+
+        let filename = path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let fragment_type = value
+            .get("fragment_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let name = value
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Untitled")
+            .to_string();
+        let tags = value
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let format_version = value
+            .get("format_version")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        result.push(BundledFragmentSummary {
+            filename,
+            fragment_type,
+            name,
+            tags,
+            format_version,
+        });
+    }
+
+    result.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(result)
+}
+
+/// Imports one bundled fragment by filename. Only macro fragments exist
+/// today, so this just delegates to `import_macro_json` -- once a second
+/// `FragmentPayload` variant exists, this needs to branch on
+/// `fragment_type` and route to the right importer. (Rust will force that
+/// change: `import_macro_json`'s `let FragmentPayload::Macro { events } =
+/// ...` is only a valid irrefutable pattern *because* there's currently
+/// just one variant -- adding a second won't compile until every such
+/// match becomes exhaustive.)
+#[tauri::command]
+pub fn import_bundled_fragment(
+    app_handle: AppHandle,
+    filename: String,
+) -> Result<MacroSummary, String> {
+    // Reject anything that looks like a path traversal attempt -- this is
+    // a filename picked from a list we generated, but defense in depth
+    // costs nothing here.
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err("Invalid fragment filename".to_string());
+    }
+
+    let path = fragments_resource_dir(&app_handle)?.join(&filename);
+    let contents = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read bundled fragment '{filename}': {e}"))?;
+
+    import_macro_json(contents)
+}
+
 /// Assigns (or clears, if `hotkey` is `None`) a global hotkey for a macro.
 /// Registers/unregisters with the OS via `tauri-plugin-global-shortcut`
 /// and keeps the in-memory `HotkeyRegistry` + the DB column in sync.
