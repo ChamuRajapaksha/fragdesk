@@ -11,6 +11,7 @@ const menuItems = [
   { id: 'clipboard', label: 'Clipboard', icon: Clipboard },
   { id: 'macros', label: 'Macros', icon: Zap },
   { id: 'monitor', label: 'Monitor', icon: Activity },
+  { id: 'fragments', label: 'Fragments', icon: Layers },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
