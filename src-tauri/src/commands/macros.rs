@@ -369,6 +369,18 @@ pub struct BundledFragmentSummary {
 /// Resolves the bundled `resources/fragments` directory, which works
 /// identically whether running via `tauri dev` or a packaged build, as
 /// long as it's declared under `bundle.resources` in `tauri.conf.json`.
+/// In a packaged build, `tauri dev`'s `bundle.resources` config maps to a
+/// real resource directory Tauri resolves via `BaseDirectory::Resource`.
+/// In dev mode there's no bundled app yet, so that resolution doesn't
+/// point anywhere real -- instead we go straight to the source tree via
+/// `CARGO_MANIFEST_DIR` (a compile-time constant pointing at `src-tauri/`,
+/// set by Cargo, not something that needs configuring).
+#[cfg(debug_assertions)]
+fn fragments_resource_dir(_app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/fragments"))
+}
+
+#[cfg(not(debug_assertions))]
 fn fragments_resource_dir(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
     app_handle
         .path()
