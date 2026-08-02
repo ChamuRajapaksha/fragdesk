@@ -6,6 +6,7 @@ import ClipboardHistory from './components/features/clipboard/ClipboardHistory';
 import SystemMonitor from './components/features/monitor/SystemMonitor';
 import MacroManager from './components/features/macro/MacroManager';
 import FragmentLibrary from './components/features/fragments/FragmentLibrary';
+import CommunityLibrary from './components/features/community/CommunityLibrary';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -22,6 +23,8 @@ function App() {
         return <SystemMonitor />;
       case 'fragments':
         return <FragmentLibrary />;
+      case 'community':
+        return <CommunityLibrary />;
       case 'settings':
         return (
           <div>
