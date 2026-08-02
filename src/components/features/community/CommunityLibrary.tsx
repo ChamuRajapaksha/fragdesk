@@ -14,6 +14,18 @@ interface CommunityFragmentRow {
     created_at: string;
 }
 
+/// Supabase query errors (PostgrestError) aren't real `Error` instances,
+/// so `err instanceof Error` fails for them and a naive `String(err)`
+/// fallback just prints "[object Object]". This checks for a `.message`
+/// property structurally instead of relying on the instanceof check.
+function extractErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (typeof err === "object" && err !== null && "message" in err) {
+        return String((err as { message: unknown }).message);
+    }
+    return String(err);
+}
+
 const TYPE_LABELS: Record<string, string> = {
     macro: "Macro",
 };
@@ -46,7 +58,7 @@ export default function CommunityLibrary() {
             if (queryError) throw queryError;
             setFragments((data as CommunityFragmentRow[]) ?? []);
         } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+            setError(extractErrorMessage(err));
         } finally {
             setLoading(false);
         }
@@ -73,7 +85,7 @@ export default function CommunityLibrary() {
             await invoke("import_macro_json", { json: fragmentJson });
             setImportedIds((prev) => new Set(prev).add(row.id));
         } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+            setError(extractErrorMessage(err));
         } finally {
             setImportingId(null);
         }
