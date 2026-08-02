@@ -26,6 +26,16 @@ create index if not exists idx_fragments_tags on fragments using gin (tags);
 
 alter table fragments enable row level security;
 
+-- Tables created via raw SQL (as opposed to the Table Editor UI) don't
+-- automatically get PostgreSQL-level privileges granted to the anon/
+-- authenticated roles -- this is a direct consequence of leaving
+-- "Automatically expose new tables" OFF in project settings (the right
+-- default, but it means grants are now our job). RLS policies below only
+-- control *row-level* access; without these GRANTs, Postgres blocks the
+-- operation before RLS is even evaluated.
+grant usage on schema public to anon, authenticated;
+grant select, insert on fragments to anon, authenticated;
+
 -- Anyone (using the app's anon key) can read every fragment. This is a
 -- public community library -- there's no private/unlisted concept yet.
 drop policy if exists "Public fragments are viewable by everyone" on fragments;
