@@ -3,8 +3,9 @@ use crate::database::{
     get_setting, init_database, insert_macro, rename_macro_item, set_macro_hotkey_item,
     set_macro_tags as db_set_macro_tags, set_setting, MacroEvent, MacroItem, MacroSummary,
 };
+use crate::fragments::{Fragment, FragmentPayload, FRAGMENT_FORMAT_VERSION};
 use rdev::{listen, simulate, Button, EventType, Key};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -282,24 +283,10 @@ pub fn set_macro_tags(id: String, tags: Vec<String>) -> Result<(), String> {
     db_set_macro_tags(&conn, &id, &tags).map_err(|e| e.to_string())
 }
 
-/// On-disk shape for a shared macro file. Deliberately its own struct
-/// (not `MacroItem`) so the exported format can evolve independently of
-/// the internal DB schema, and so we don't leak DB-only fields like `id`
-/// (meaningless on another machine) or `hotkey` (actively wrong to carry
-/// over -- it might collide with something already bound there).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MacroExport {
-    pub format_version: u32,
-    pub name: String,
-    pub exported_at: i64,
-    pub events: Vec<MacroEvent>,
-}
-
-const MACRO_EXPORT_FORMAT_VERSION: u32 = 1;
-
-/// Returns a pretty-printed JSON string for the given macro. The frontend
-/// triggers the actual file save via a plain browser Blob download --
-/// no Tauri dialog/fs plugin needed for this.
+/// Returns a pretty-printed JSON string for the given macro, wrapped in
+/// the shared `Fragment` envelope (see `crate::fragments`). The frontend
+/// triggers the actual file save via a plain browser Blob download -- no
+/// Tauri dialog/fs plugin needed for this.
 #[tauri::command]
 pub fn export_macro_json(id: String) -> Result<String, String> {
     let conn = init_database().map_err(|e| e.to_string())?;
@@ -307,52 +294,197 @@ pub fn export_macro_json(id: String) -> Result<String, String> {
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Macro not found".to_string())?;
 
-    let export = MacroExport {
-        format_version: MACRO_EXPORT_FORMAT_VERSION,
+    let fragment = Fragment {
+        format_version: FRAGMENT_FORMAT_VERSION,
         name: macro_item.name,
+        tags: macro_item.tags,
         exported_at: chrono::Utc::now().timestamp(),
-        events: macro_item.events,
+        payload: FragmentPayload::Macro {
+            events: macro_item.events,
+        },
     };
 
-    serde_json::to_string_pretty(&export).map_err(|e| e.to_string())
+    serde_json::to_string_pretty(&fragment).map_err(|e| e.to_string())
 }
 
-/// Imports a macro from JSON text (read on the frontend via a plain
-/// `<input type="file">` + FileReader, no plugin needed). Always assigns
-/// a fresh id, so importing never collides with an existing macro --
-/// even re-importing the same file twice just creates a second copy.
+/// Imports a macro fragment from JSON text (read on the frontend via a
+/// plain `<input type="file">` + FileReader, no plugin needed). Always
+/// assigns a fresh id, so importing never collides with an existing
+/// macro -- even re-importing the same file twice just creates a second
+/// copy. Tags carry over from the fragment; hotkey never does.
 #[tauri::command]
 pub fn import_macro_json(json: String) -> Result<MacroSummary, String> {
-    let export: MacroExport =
-        serde_json::from_str(&json).map_err(|e| format!("Couldn't parse macro file: {e}"))?;
+    let fragment: Fragment =
+        serde_json::from_str(&json).map_err(|e| format!("Couldn't parse fragment file: {e}"))?;
 
-    if export.format_version > MACRO_EXPORT_FORMAT_VERSION {
+    if fragment.format_version > FRAGMENT_FORMAT_VERSION {
         return Err(
-            "This macro file was exported by a newer version of FragDesk and can't be read yet"
+            "This fragment was exported by a newer version of FragDesk and can't be read yet"
                 .to_string(),
         );
     }
 
-    if export.events.is_empty() {
+    let FragmentPayload::Macro { events } = fragment.payload;
+
+    if events.is_empty() {
         return Err("This macro file has no recorded events".to_string());
     }
 
-    let duration_ms: u64 = export.events.iter().map(event_delay_ms).sum();
+    let duration_ms: u64 = events.iter().map(event_delay_ms).sum();
     let id = Uuid::new_v4().to_string();
 
     let conn = init_database().map_err(|e| e.to_string())?;
-    insert_macro(&conn, &id, &export.name, &export.events, duration_ms as i64)
+    insert_macro(&conn, &id, &fragment.name, &events, duration_ms as i64)
         .map_err(|e| e.to_string())?;
+    if !fragment.tags.is_empty() {
+        db_set_macro_tags(&conn, &id, &fragment.tags).map_err(|e| e.to_string())?;
+    }
 
     Ok(MacroSummary {
         id,
-        name: export.name,
+        name: fragment.name,
         created_at: chrono::Utc::now().timestamp(),
-        event_count: export.events.len() as i32,
+        event_count: events.len() as i32,
         duration_ms: duration_ms as i64,
         hotkey: None,
-        tags: Vec::new(),
+        tags: fragment.tags,
     })
+}
+
+/// Lightweight summary of a bundled fragment for the library browser --
+/// parsed generically via `serde_json::Value` rather than the typed
+/// `Fragment` struct, so listing doesn't break if a bundled file uses a
+/// `fragment_type` this build doesn't have a variant for yet (a future
+/// clipboard-snippet or tip fragment, say). Only the actual import step
+/// needs the fully-typed shape.
+#[derive(Debug, Clone, Serialize)]
+pub struct BundledFragmentSummary {
+    pub filename: String,
+    pub fragment_type: String,
+    pub name: String,
+    pub tags: Vec<String>,
+    pub format_version: u32,
+}
+
+/// Resolves the bundled `resources/fragments` directory, which works
+/// identically whether running via `tauri dev` or a packaged build, as
+/// long as it's declared under `bundle.resources` in `tauri.conf.json`.
+/// In a packaged build, `tauri dev`'s `bundle.resources` config maps to a
+/// real resource directory Tauri resolves via `BaseDirectory::Resource`.
+/// In dev mode there's no bundled app yet, so that resolution doesn't
+/// point anywhere real -- instead we go straight to the source tree via
+/// `CARGO_MANIFEST_DIR` (a compile-time constant pointing at `src-tauri/`,
+/// set by Cargo, not something that needs configuring).
+#[cfg(debug_assertions)]
+fn fragments_resource_dir(_app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/fragments"))
+}
+
+#[cfg(not(debug_assertions))]
+fn fragments_resource_dir(app_handle: &AppHandle) -> Result<std::path::PathBuf, String> {
+    app_handle
+        .path()
+        .resolve("resources/fragments", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("Failed to locate bundled fragments directory: {e}"))
+}
+
+/// Lists every bundled fragment shipped with the app (the "starter pack"
+/// -- curated content baked into the binary, no server involved). Skips
+/// any file that fails to parse rather than failing the whole list, since
+/// one malformed sample shouldn't hide the rest.
+#[tauri::command]
+pub fn list_bundled_fragments(
+    app_handle: AppHandle,
+) -> Result<Vec<BundledFragmentSummary>, String> {
+    let dir = fragments_resource_dir(&app_handle)?;
+
+    let entries = std::fs::read_dir(&dir)
+        .map_err(|e| format!("Failed to read bundled fragments directory: {e}"))?;
+
+    let mut result = Vec::new();
+
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) else {
+            continue;
+        };
+
+        let filename = path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let fragment_type = value
+            .get("fragment_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let name = value
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Untitled")
+            .to_string();
+        let tags = value
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let format_version = value
+            .get("format_version")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        result.push(BundledFragmentSummary {
+            filename,
+            fragment_type,
+            name,
+            tags,
+            format_version,
+        });
+    }
+
+    result.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(result)
+}
+
+/// Imports one bundled fragment by filename. Only macro fragments exist
+/// today, so this just delegates to `import_macro_json` -- once a second
+/// `FragmentPayload` variant exists, this needs to branch on
+/// `fragment_type` and route to the right importer. (Rust will force that
+/// change: `import_macro_json`'s `let FragmentPayload::Macro { events } =
+/// ...` is only a valid irrefutable pattern *because* there's currently
+/// just one variant -- adding a second won't compile until every such
+/// match becomes exhaustive.)
+#[tauri::command]
+pub fn import_bundled_fragment(
+    app_handle: AppHandle,
+    filename: String,
+) -> Result<MacroSummary, String> {
+    // Reject anything that looks like a path traversal attempt -- this is
+    // a filename picked from a list we generated, but defense in depth
+    // costs nothing here.
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err("Invalid fragment filename".to_string());
+    }
+
+    let path = fragments_resource_dir(&app_handle)?.join(&filename);
+    let contents = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read bundled fragment '{filename}': {e}"))?;
+
+    import_macro_json(contents)
 }
 
 /// Assigns (or clears, if `hotkey` is `None`) a global hotkey for a macro.

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Clipboard, Zap, Activity, Settings, Layers } from 'lucide-react';
+import { Clipboard, Zap, Activity, Settings, Layers, Users } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
@@ -11,6 +11,8 @@ const menuItems = [
   { id: 'clipboard', label: 'Clipboard', icon: Clipboard },
   { id: 'macros', label: 'Macros', icon: Zap },
   { id: 'monitor', label: 'Monitor', icon: Activity },
+  { id: 'fragments', label: 'Fragments', icon: Layers },
+  { id: 'community', label: 'Community', icon: Users },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
