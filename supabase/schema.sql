@@ -57,7 +57,12 @@ create policy "Anyone can submit a fragment"
   with check (
     fragment_type in ('macro')
     and char_length(name) between 1 and 100
-    and (tags is null or array_length(tags, 1) <= 10)
+    -- array_length() returns NULL (not 0) for an empty array, and RLS
+    -- treats a NULL check result as "deny" (unlike a normal CHECK
+    -- constraint, where NULL is permissive). Without coalesce(), any
+    -- fragment with zero tags -- the common case for a freshly recorded
+    -- macro -- would be silently rejected by this exact clause.
+    and coalesce(array_length(tags, 1), 0) <= 10
   );
 
 -- Deliberately no UPDATE or DELETE policy yet. Without real user accounts,
