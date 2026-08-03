@@ -20,3 +20,19 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(supabaseUrl as string, supabaseAnonKey as string)
   : null;
+
+/**
+ * Supabase query errors (PostgrestError) aren't real `Error` instances,
+ * so a plain `err instanceof Error` check fails for them and a naive
+ * `String(err)` fallback just prints "[object Object]". This checks for
+ * a `.message` property structurally instead of relying on instanceof.
+ * Shared here rather than duplicated per-component, since anything
+ * touching Supabase needs the same handling.
+ */
+export function extractErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return String(err);
+}

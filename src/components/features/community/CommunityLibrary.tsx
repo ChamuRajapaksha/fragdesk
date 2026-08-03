@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
+import { extractErrorMessage, isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
 
 interface CommunityFragmentRow {
     id: string;
@@ -12,18 +12,6 @@ interface CommunityFragmentRow {
     submitted_by: string | null;
     download_count: number;
     created_at: string;
-}
-
-/// Supabase query errors (PostgrestError) aren't real `Error` instances,
-/// so `err instanceof Error` fails for them and a naive `String(err)`
-/// fallback just prints "[object Object]". This checks for a `.message`
-/// property structurally instead of relying on the instanceof check.
-function extractErrorMessage(err: unknown): string {
-    if (err instanceof Error) return err.message;
-    if (typeof err === "object" && err !== null && "message" in err) {
-        return String((err as { message: unknown }).message);
-    }
-    return String(err);
 }
 
 const TYPE_LABELS: Record<string, string> = {
