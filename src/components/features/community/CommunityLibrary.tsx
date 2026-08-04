@@ -92,6 +92,7 @@ export default function CommunityLibrary() {
     const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
     const [importingId, setImportingId] = useState<string | null>(null);
     const [previewOpenId, setPreviewOpenId] = useState<string | null>(null);
+    const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
 
     useEffect(() => {
         if (isSupabaseConfigured) {
@@ -121,6 +122,7 @@ export default function CommunityLibrary() {
     }
 
     async function handleImport(row: CommunityFragmentRow) {
+        if (!supabase) return;
         setError(null);
         setImportingId(row.id);
         try {
@@ -141,12 +143,41 @@ export default function CommunityLibrary() {
             await invoke("import_macro_json", { json: fragmentJson, source: "community" });
             setImportedIds((prev) => new Set(prev).add(row.id));
             setPreviewOpenId(null);
+
+            // Best-effort -- a failed count bump shouldn't undo a
+            // successful import, so this is deliberately not in the same
+            // try block's failure path.
+            supabase
+                .rpc("increment_download_count", { fragment_id: row.id })
+                .then(({ error: rpcError }) => {
+                    if (rpcError) {
+                        console.warn("Failed to bump download count:", rpcError);
+                        return;
+                    }
+                    setFragments((prev) =>
+                        prev.map((f) =>
+                            f.id === row.id ? { ...f, download_count: f.download_count + 1 } : f
+                        )
+                    );
+                });
         } catch (err) {
             setError(extractErrorMessage(err));
         } finally {
             setImportingId(null);
         }
     }
+
+    function toggleTagFilter(tag: string) {
+        setActiveTagFilters((prev) =>
+            prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+        );
+    }
+
+    const allTags = Array.from(new Set(fragments.flatMap((f) => f.tags))).sort();
+    const visibleFragments =
+        activeTagFilters.length === 0
+            ? fragments
+            : fragments.filter((f) => f.tags.some((t) => activeTagFilters.includes(t)));
 
     if (!isSupabaseConfigured) {
         return (
@@ -189,13 +220,44 @@ export default function CommunityLibrary() {
                 </div>
             )}
 
+            {!loading && allTags.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                    {allTags.map((tag) => {
+                        const active = activeTagFilters.includes(tag);
+                        return (
+                            <button
+                                key={tag}
+                                onClick={() => toggleTagFilter(tag)}
+                                className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                                    active
+                                        ? "bg-[#00d9ff]/15 border-[#00d9ff]/50 text-[#00d9ff]"
+                                        : "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200"
+                                }`}
+                            >
+                                {tag}
+                            </button>
+                        );
+                    })}
+                    {activeTagFilters.length > 0 && (
+                        <button
+                            onClick={() => setActiveTagFilters([])}
+                            className="text-xs text-gray-500 hover:text-gray-300 ml-1"
+                        >
+                            clear filters
+                        </button>
+                    )}
+                </div>
+            )}
+
             {loading ? (
                 <p className="text-gray-500 text-sm">Loading...</p>
             ) : fragments.length === 0 ? (
                 <p className="text-gray-500 text-sm">No community fragments yet.</p>
+            ) : visibleFragments.length === 0 ? (
+                <p className="text-gray-500 text-sm">No fragments match the selected tags.</p>
             ) : (
                 <div className="space-y-2">
-                    {fragments.map((row) => {
+                    {visibleFragments.map((row) => {
                         const isImported = importedIds.has(row.id);
                         const isImporting = importingId === row.id;
                         const isPreviewOpen = previewOpenId === row.id;
