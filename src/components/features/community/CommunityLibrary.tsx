@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
+import { extractErrorMessage, isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
 
 interface CommunityFragmentRow {
     id: string;
@@ -14,9 +14,76 @@ interface CommunityFragmentRow {
     created_at: string;
 }
 
+interface MacroEventLike {
+    type: string;
+    key?: string;
+    button?: string;
+    delay_ms?: number;
+}
+
+interface MacroPreviewStats {
+    keyPresses: number;
+    mouseClicks: number;
+    mouseMoves: number;
+    wheelScrolls: number;
+    distinctKeys: string[];
+    totalEvents: number;
+}
+
 const TYPE_LABELS: Record<string, string> = {
     macro: "Macro",
 };
+
+/// Summarizes a macro's raw event list into human-readable counts, purely
+/// client-side -- the full payload is already in memory from the browse
+/// query, no extra backend call needed. This is the actual safety gate:
+/// a community macro simulates real keyboard/mouse input the moment it's
+/// played, so someone should see roughly what it does before it lands in
+/// their library, not just a name and a tag.
+function summarizeMacroPayload(payload: unknown): MacroPreviewStats | null {
+    if (
+        typeof payload !== "object" ||
+        payload === null ||
+        !("events" in payload) ||
+        !Array.isArray((payload as { events: unknown }).events)
+    ) {
+        return null;
+    }
+
+    const events = (payload as { events: MacroEventLike[] }).events;
+    const stats: MacroPreviewStats = {
+        keyPresses: 0,
+        mouseClicks: 0,
+        mouseMoves: 0,
+        wheelScrolls: 0,
+        distinctKeys: [],
+        totalEvents: events.length,
+    };
+    const keySet = new Set<string>();
+
+    for (const e of events) {
+        switch (e.type) {
+            case "KeyDown":
+                stats.keyPresses += 1;
+                if (e.key) keySet.add(e.key);
+                break;
+            case "MouseDown":
+                stats.mouseClicks += 1;
+                break;
+            case "MouseMove":
+                stats.mouseMoves += 1;
+                break;
+            case "Wheel":
+                stats.wheelScrolls += 1;
+                break;
+            default:
+                break;
+        }
+    }
+
+    stats.distinctKeys = Array.from(keySet);
+    return stats;
+}
 
 export default function CommunityLibrary() {
     const [fragments, setFragments] = useState<CommunityFragmentRow[]>([]);
@@ -24,6 +91,8 @@ export default function CommunityLibrary() {
     const [error, setError] = useState<string | null>(null);
     const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
     const [importingId, setImportingId] = useState<string | null>(null);
+    const [previewOpenId, setPreviewOpenId] = useState<string | null>(null);
+    const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
 
     useEffect(() => {
         if (isSupabaseConfigured) {
@@ -46,13 +115,14 @@ export default function CommunityLibrary() {
             if (queryError) throw queryError;
             setFragments((data as CommunityFragmentRow[]) ?? []);
         } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+            setError(extractErrorMessage(err));
         } finally {
             setLoading(false);
         }
     }
 
     async function handleImport(row: CommunityFragmentRow) {
+        if (!supabase) return;
         setError(null);
         setImportingId(row.id);
         try {
@@ -70,14 +140,44 @@ export default function CommunityLibrary() {
                 payload: row.payload,
             });
 
-            await invoke("import_macro_json", { json: fragmentJson });
+            await invoke("import_macro_json", { json: fragmentJson, source: "community" });
             setImportedIds((prev) => new Set(prev).add(row.id));
+            setPreviewOpenId(null);
+
+            // Best-effort -- a failed count bump shouldn't undo a
+            // successful import, so this is deliberately not in the same
+            // try block's failure path.
+            supabase
+                .rpc("increment_download_count", { fragment_id: row.id })
+                .then(({ error: rpcError }) => {
+                    if (rpcError) {
+                        console.warn("Failed to bump download count:", rpcError);
+                        return;
+                    }
+                    setFragments((prev) =>
+                        prev.map((f) =>
+                            f.id === row.id ? { ...f, download_count: f.download_count + 1 } : f
+                        )
+                    );
+                });
         } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+            setError(extractErrorMessage(err));
         } finally {
             setImportingId(null);
         }
     }
+
+    function toggleTagFilter(tag: string) {
+        setActiveTagFilters((prev) =>
+            prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+        );
+    }
+
+    const allTags = Array.from(new Set(fragments.flatMap((f) => f.tags))).sort();
+    const visibleFragments =
+        activeTagFilters.length === 0
+            ? fragments
+            : fragments.filter((f) => f.tags.some((t) => activeTagFilters.includes(t)));
 
     if (!isSupabaseConfigured) {
         return (
@@ -109,7 +209,8 @@ export default function CommunityLibrary() {
             <div>
                 <h1 className="text-2xl font-bold text-[#00d9ff]">Community Library</h1>
                 <p className="text-sm text-gray-400 mt-1">
-                    Browse and import fragments shared by the community.
+                    Browse and import fragments shared by the community. Macros simulate real
+                    keyboard/mouse input — preview what one does before importing it.
                 </p>
             </div>
 
@@ -119,55 +220,142 @@ export default function CommunityLibrary() {
                 </div>
             )}
 
+            {!loading && allTags.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                    {allTags.map((tag) => {
+                        const active = activeTagFilters.includes(tag);
+                        return (
+                            <button
+                                key={tag}
+                                onClick={() => toggleTagFilter(tag)}
+                                className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                                    active
+                                        ? "bg-[#00d9ff]/15 border-[#00d9ff]/50 text-[#00d9ff]"
+                                        : "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200"
+                                }`}
+                            >
+                                {tag}
+                            </button>
+                        );
+                    })}
+                    {activeTagFilters.length > 0 && (
+                        <button
+                            onClick={() => setActiveTagFilters([])}
+                            className="text-xs text-gray-500 hover:text-gray-300 ml-1"
+                        >
+                            clear filters
+                        </button>
+                    )}
+                </div>
+            )}
+
             {loading ? (
                 <p className="text-gray-500 text-sm">Loading...</p>
             ) : fragments.length === 0 ? (
                 <p className="text-gray-500 text-sm">No community fragments yet.</p>
+            ) : visibleFragments.length === 0 ? (
+                <p className="text-gray-500 text-sm">No fragments match the selected tags.</p>
             ) : (
                 <div className="space-y-2">
-                    {fragments.map((row) => {
+                    {visibleFragments.map((row) => {
                         const isImported = importedIds.has(row.id);
                         const isImporting = importingId === row.id;
+                        const isPreviewOpen = previewOpenId === row.id;
+                        const stats = isPreviewOpen ? summarizeMacroPayload(row.payload) : null;
 
                         return (
                             <div
                                 key={row.id}
-                                className="bg-[#141933] rounded-xl p-4 border border-white/5 flex items-center justify-between"
+                                className="bg-[#141933] rounded-xl p-4 border border-white/5"
                             >
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <p className="font-medium">{row.name}</p>
-                                        <span className="text-xs bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
-                                            {TYPE_LABELS[row.fragment_type] ?? row.fragment_type}
-                                        </span>
-                                    </div>
-                                    <p className="text-xs text-gray-500 mt-0.5">
-                                        {row.download_count} downloads
-                                    </p>
-                                    {row.tags.length > 0 && (
-                                        <div className="flex flex-wrap gap-1 mt-1.5">
-                                            {row.tags.map((tag) => (
-                                                <span
-                                                    key={tag}
-                                                    className="text-xs bg-white/5 text-gray-400 rounded-full px-2 py-0.5"
-                                                >
-                                                    {tag}
-                                                </span>
-                                            ))}
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-medium">{row.name}</p>
+                                            <span className="text-xs bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
+                                                {TYPE_LABELS[row.fragment_type] ?? row.fragment_type}
+                                            </span>
                                         </div>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            {row.download_count} downloads
+                                        </p>
+                                        {row.tags.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mt-1.5">
+                                                {row.tags.map((tag) => (
+                                                    <span
+                                                        key={tag}
+                                                        className="text-xs bg-white/5 text-gray-400 rounded-full px-2 py-0.5"
+                                                    >
+                                                        {tag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {isImported ? (
+                                        <span className="px-4 py-2 rounded-lg text-sm font-medium bg-[#00ff88]/15 text-[#00ff88] border border-[#00ff88]/30">
+                                            Imported ✓
+                                        </span>
+                                    ) : (
+                                        <button
+                                            onClick={() =>
+                                                setPreviewOpenId(isPreviewOpen ? null : row.id)
+                                            }
+                                            className="px-4 py-2 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-gray-300"
+                                        >
+                                            {isPreviewOpen ? "Hide preview" : "Preview"}
+                                        </button>
                                     )}
                                 </div>
-                                <button
-                                    onClick={() => handleImport(row)}
-                                    disabled={isImporting || isImported}
-                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:cursor-not-allowed ${
-                                        isImported
-                                            ? "bg-[#00ff88]/15 text-[#00ff88] border border-[#00ff88]/30"
-                                            : "bg-[#00d9ff] hover:bg-[#00d9ff]/80 text-[#0a0e27] disabled:opacity-40"
-                                    }`}
-                                >
-                                    {isImported ? "Imported ✓" : isImporting ? "Importing..." : "Import"}
-                                </button>
+
+                                {isPreviewOpen && (
+                                    <div className="mt-3 pt-3 border-t border-white/5 space-y-3">
+                                        {stats ? (
+                                            <div className="text-sm text-gray-300 space-y-1">
+                                                <p>
+                                                    <span className="text-gray-500">
+                                                        This macro will simulate:
+                                                    </span>
+                                                </p>
+                                                <ul className="text-xs text-gray-400 space-y-0.5 pl-4 list-disc">
+                                                    <li>{stats.keyPresses} key press(es)</li>
+                                                    <li>{stats.mouseClicks} mouse click(s)</li>
+                                                    <li>{stats.mouseMoves} mouse movement(s)</li>
+                                                    <li>{stats.wheelScrolls} scroll event(s)</li>
+                                                </ul>
+                                                {stats.distinctKeys.length > 0 && (
+                                                    <p className="text-xs text-gray-500">
+                                                        Keys involved: {stats.distinctKeys.join(", ")}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-gray-500">
+                                                Couldn't parse this fragment's contents to preview.
+                                            </p>
+                                        )}
+                                        <p className="text-xs text-[#ff3366]">
+                                            Once imported, playing this macro will actually perform
+                                            these actions on your computer.
+                                        </p>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => handleImport(row)}
+                                                disabled={isImporting || !stats}
+                                                className="px-3 py-1.5 rounded-lg bg-[#00d9ff] hover:bg-[#00d9ff]/80 text-[#0a0e27] text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                                            >
+                                                {isImporting ? "Importing..." : "Import"}
+                                            </button>
+                                            <button
+                                                onClick={() => setPreviewOpenId(null)}
+                                                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-sm font-medium"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         );
                     })}

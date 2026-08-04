@@ -1,7 +1,8 @@
 use crate::database::{
     delete_macro_item, get_macro_by_id, get_macro_id_by_hotkey, get_macros as db_get_macros,
     get_setting, init_database, insert_macro, rename_macro_item, set_macro_hotkey_item,
-    set_macro_tags as db_set_macro_tags, set_setting, MacroEvent, MacroItem, MacroSummary,
+    set_macro_source_item as db_set_macro_source, set_macro_tags as db_set_macro_tags,
+    set_setting, MacroEvent, MacroItem, MacroSummary,
 };
 use crate::fragments::{Fragment, FragmentPayload, FRAGMENT_FORMAT_VERSION};
 use rdev::{listen, simulate, Button, EventType, Key};
@@ -235,6 +236,7 @@ pub fn save_macro_recording(
         duration_ms: duration_ms as i64,
         hotkey: None,
         tags: Vec::new(),
+        source: None,
     })
 }
 
@@ -313,7 +315,7 @@ pub fn export_macro_json(id: String) -> Result<String, String> {
 /// macro -- even re-importing the same file twice just creates a second
 /// copy. Tags carry over from the fragment; hotkey never does.
 #[tauri::command]
-pub fn import_macro_json(json: String) -> Result<MacroSummary, String> {
+pub fn import_macro_json(json: String, source: Option<String>) -> Result<MacroSummary, String> {
     let fragment: Fragment =
         serde_json::from_str(&json).map_err(|e| format!("Couldn't parse fragment file: {e}"))?;
 
@@ -339,6 +341,9 @@ pub fn import_macro_json(json: String) -> Result<MacroSummary, String> {
     if !fragment.tags.is_empty() {
         db_set_macro_tags(&conn, &id, &fragment.tags).map_err(|e| e.to_string())?;
     }
+    if let Some(src) = &source {
+        db_set_macro_source(&conn, &id, Some(src.as_str())).map_err(|e| e.to_string())?;
+    }
 
     Ok(MacroSummary {
         id,
@@ -348,6 +353,7 @@ pub fn import_macro_json(json: String) -> Result<MacroSummary, String> {
         duration_ms: duration_ms as i64,
         hotkey: None,
         tags: fragment.tags,
+        source,
     })
 }
 
@@ -484,7 +490,7 @@ pub fn import_bundled_fragment(
     let contents = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read bundled fragment '{filename}': {e}"))?;
 
-    import_macro_json(contents)
+    import_macro_json(contents, Some("starter".to_string()))
 }
 
 /// Assigns (or clears, if `hotkey` is `None`) a global hotkey for a macro.

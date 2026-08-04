@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { extractErrorMessage, isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
 
 interface MacroSummary {
     id: string;
@@ -10,6 +11,7 @@ interface MacroSummary {
     duration_ms: number;
     hotkey: string | null;
     tags: string[];
+    source: string | null; // null = recorded/imported locally, "community", "starter"
 }
 
 interface RecordingPreview {
@@ -61,6 +63,14 @@ export default function MacroManager() {
 
     // Delete confirmation: which macro id is armed for a second click.
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+    // Community sharing: mirrors the delete-confirm pattern, since sharing
+    // is currently a one-way action (no update/delete policy exists yet
+    // on the fragments table, so there's no "unshare" from the app).
+    const [confirmShareId, setConfirmShareId] = useState<string | null>(null);
+    const [sharingId, setSharingId] = useState<string | null>(null);
+    const [sharedIds, setSharedIds] = useState<Set<string>>(new Set());
+    const shareConfirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Hotkey capture: which macro id is currently listening for a key combo.
     const [capturingHotkeyId, setCapturingHotkeyId] = useState<string | null>(null);
@@ -135,6 +145,7 @@ export default function MacroManager() {
             unlistenPlaybackProgress.then((f) => f());
             unlistenPlaybackFinished.then((f) => f());
             if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+            if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
         };
     }, []);
 
@@ -343,6 +354,65 @@ export default function MacroManager() {
         }
     }
 
+    function handleShareClick(id: string) {
+        if (!isSupabaseConfigured) {
+            setError(
+                "Community sharing isn't set up yet — add Supabase credentials to .env first."
+            );
+            return;
+        }
+
+        if (confirmShareId === id) {
+            // Second click within the window — actually submit.
+            if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
+            setConfirmShareId(null);
+            void handleShare(id);
+            return;
+        }
+
+        // First click — arm confirmation. Sharing is currently one-way:
+        // there's no update/delete policy on the fragments table yet (no
+        // auth exists to prove ownership), so once submitted, it can't be
+        // pulled back from inside the app.
+        setConfirmShareId(id);
+        if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
+        shareConfirmResetTimer.current = setTimeout(() => setConfirmShareId(null), 4000);
+    }
+
+    async function handleShare(id: string) {
+        if (!supabase) return;
+        setError(null);
+        setSharingId(id);
+        try {
+            // Reuse the exact same envelope local export already produces
+            // (see src-tauri/src/fragments.rs) -- no separate "prepare for
+            // upload" logic needed, it's the identical shape either way.
+            const json = await invoke<string>("export_macro_json", { id });
+            const fragment = JSON.parse(json) as {
+                fragment_type: string;
+                name: string;
+                tags: string[];
+                format_version: number;
+                payload: unknown;
+            };
+
+            const { error: insertError } = await supabase.from("fragments").insert({
+                fragment_type: fragment.fragment_type,
+                name: fragment.name,
+                tags: fragment.tags,
+                format_version: fragment.format_version,
+                payload: fragment.payload,
+            });
+
+            if (insertError) throw insertError;
+            setSharedIds((prev) => new Set(prev).add(id));
+        } catch (err) {
+            setError(extractErrorMessage(err));
+        } finally {
+            setSharingId(null);
+        }
+    }
+
     async function handleExport(m: MacroSummary) {
         try {
             const json = await invoke<string>("export_macro_json", { id: m.id });
@@ -369,7 +439,7 @@ export default function MacroManager() {
 
         try {
             const text = await file.text();
-            await invoke("import_macro_json", { json: text });
+            await invoke("import_macro_json", { json: text, source: null });
             await refreshMacros();
         } catch (err) {
             setError(String(err));
@@ -642,28 +712,46 @@ export default function MacroManager() {
                                 className="bg-[#141933] rounded-xl p-4 border border-white/5 flex items-center justify-between"
                             >
                                 <div className="flex-1 min-w-0">
-                                    {isRenamingThis ? (
-                                        <input
-                                            ref={renameInputRef}
-                                            type="text"
-                                            value={renameDraft}
-                                            onChange={(e) => setRenameDraft(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter") commitRename();
-                                                if (e.key === "Escape") cancelRename();
-                                            }}
-                                            onBlur={commitRename}
-                                            className="bg-[#0a0e27] border border-[#00d9ff] rounded px-2 py-1 text-sm w-full max-w-xs focus:outline-none"
-                                        />
-                                    ) : (
-                                        <button
-                                            onClick={() => startRename(m)}
-                                            title="Click to rename"
-                                            className="font-medium text-left hover:text-[#00d9ff] transition-colors"
-                                        >
-                                            {m.name}
-                                        </button>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                        {isRenamingThis ? (
+                                            <input
+                                                ref={renameInputRef}
+                                                type="text"
+                                                value={renameDraft}
+                                                onChange={(e) => setRenameDraft(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") commitRename();
+                                                    if (e.key === "Escape") cancelRename();
+                                                }}
+                                                onBlur={commitRename}
+                                                className="bg-[#0a0e27] border border-[#00d9ff] rounded px-2 py-1 text-sm w-full max-w-xs focus:outline-none"
+                                            />
+                                        ) : (
+                                            <button
+                                                onClick={() => startRename(m)}
+                                                title="Click to rename"
+                                                className="font-medium text-left hover:text-[#00d9ff] transition-colors"
+                                            >
+                                                {m.name}
+                                            </button>
+                                        )}
+                                        {m.source === "community" && (
+                                            <span
+                                                title="Imported from the Community Library — reviewed this before importing? Playing it simulates real input on your machine."
+                                                className="text-xs bg-[#ff3366]/10 text-[#ff3366] border border-[#ff3366]/30 rounded px-1.5 py-0.5"
+                                            >
+                                                community
+                                            </span>
+                                        )}
+                                        {m.source === "starter" && (
+                                            <span
+                                                title="Imported from FragDesk's bundled starter pack"
+                                                className="text-xs bg-white/5 text-gray-400 rounded px-1.5 py-0.5"
+                                            >
+                                                starter
+                                            </span>
+                                        )}
+                                    </div>
                                     <p className="text-xs text-gray-500 mt-0.5">
                                         {m.event_count} events · {formatDuration(m.duration_ms)} ·{" "}
                                         {formatDate(m.created_at)}
@@ -777,6 +865,28 @@ export default function MacroManager() {
                                     >
                                         Export
                                     </button>
+                                    {sharedIds.has(m.id) ? (
+                                        <span className="px-3 py-1.5 rounded-lg bg-[#00ff88]/15 text-[#00ff88] border border-[#00ff88]/30 text-sm font-medium">
+                                            Shared ✓
+                                        </span>
+                                    ) : (
+                                        <button
+                                            onClick={() => handleShareClick(m.id)}
+                                            disabled={isThisPlaying || sharingId === m.id}
+                                            title="Publishes this macro to the public Community Library"
+                                            className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
+                                                confirmShareId === m.id
+                                                    ? "bg-[#b026ff] text-white"
+                                                    : "bg-white/5 hover:bg-white/10 text-gray-300"
+                                            }`}
+                                        >
+                                            {sharingId === m.id
+                                                ? "Sharing..."
+                                                : confirmShareId === m.id
+                                                ? "Confirm public share?"
+                                                : "Share"}
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => handleDeleteClick(m.id)}
                                         disabled={isThisPlaying}
