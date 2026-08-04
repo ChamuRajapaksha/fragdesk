@@ -11,6 +11,7 @@ interface MacroSummary {
     duration_ms: number;
     hotkey: string | null;
     tags: string[];
+    source: string | null; // null = recorded/imported locally, "community", "starter"
 }
 
 interface RecordingPreview {
@@ -438,7 +439,7 @@ export default function MacroManager() {
 
         try {
             const text = await file.text();
-            await invoke("import_macro_json", { json: text });
+            await invoke("import_macro_json", { json: text, source: null });
             await refreshMacros();
         } catch (err) {
             setError(String(err));
@@ -711,28 +712,46 @@ export default function MacroManager() {
                                 className="bg-[#141933] rounded-xl p-4 border border-white/5 flex items-center justify-between"
                             >
                                 <div className="flex-1 min-w-0">
-                                    {isRenamingThis ? (
-                                        <input
-                                            ref={renameInputRef}
-                                            type="text"
-                                            value={renameDraft}
-                                            onChange={(e) => setRenameDraft(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === "Enter") commitRename();
-                                                if (e.key === "Escape") cancelRename();
-                                            }}
-                                            onBlur={commitRename}
-                                            className="bg-[#0a0e27] border border-[#00d9ff] rounded px-2 py-1 text-sm w-full max-w-xs focus:outline-none"
-                                        />
-                                    ) : (
-                                        <button
-                                            onClick={() => startRename(m)}
-                                            title="Click to rename"
-                                            className="font-medium text-left hover:text-[#00d9ff] transition-colors"
-                                        >
-                                            {m.name}
-                                        </button>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                        {isRenamingThis ? (
+                                            <input
+                                                ref={renameInputRef}
+                                                type="text"
+                                                value={renameDraft}
+                                                onChange={(e) => setRenameDraft(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") commitRename();
+                                                    if (e.key === "Escape") cancelRename();
+                                                }}
+                                                onBlur={commitRename}
+                                                className="bg-[#0a0e27] border border-[#00d9ff] rounded px-2 py-1 text-sm w-full max-w-xs focus:outline-none"
+                                            />
+                                        ) : (
+                                            <button
+                                                onClick={() => startRename(m)}
+                                                title="Click to rename"
+                                                className="font-medium text-left hover:text-[#00d9ff] transition-colors"
+                                            >
+                                                {m.name}
+                                            </button>
+                                        )}
+                                        {m.source === "community" && (
+                                            <span
+                                                title="Imported from the Community Library — reviewed this before importing? Playing it simulates real input on your machine."
+                                                className="text-xs bg-[#ff3366]/10 text-[#ff3366] border border-[#ff3366]/30 rounded px-1.5 py-0.5"
+                                            >
+                                                community
+                                            </span>
+                                        )}
+                                        {m.source === "starter" && (
+                                            <span
+                                                title="Imported from FragDesk's bundled starter pack"
+                                                className="text-xs bg-white/5 text-gray-400 rounded px-1.5 py-0.5"
+                                            >
+                                                starter
+                                            </span>
+                                        )}
+                                    </div>
                                     <p className="text-xs text-gray-500 mt-0.5">
                                         {m.event_count} events · {formatDuration(m.duration_ms)} ·{" "}
                                         {formatDate(m.created_at)}
