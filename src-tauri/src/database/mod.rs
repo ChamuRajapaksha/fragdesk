@@ -51,6 +51,11 @@ pub fn init_database() -> Result<Connection> {
     // is read, so existing macros don't need backfilling.
     let _ = conn.execute("ALTER TABLE macros ADD COLUMN tags TEXT", []);
 
+    // Migration: add source column (NULL = recorded locally, "community",
+    // or "starter"). Used only for UI badging so a downloaded macro is
+    // never visually indistinguishable from one you recorded yourself.
+    let _ = conn.execute("ALTER TABLE macros ADD COLUMN source TEXT", []);
+
     // Generic key-value settings store. Currently used for the
     // record-toggle hotkey, but kept general so future app-wide
     // preferences don't each need their own table.
@@ -175,6 +180,14 @@ pub struct MacroSummary {
     pub duration_ms: i64,
     pub hotkey: Option<String>,
     pub tags: Vec<String>,
+    /// None = recorded locally. Some("community") = imported from the
+    /// Community Library. Some("starter") = imported from the bundled
+    /// starter pack. Used purely for UI badging -- lets the Macro Manager
+    /// show a clear, permanent visual distinction between your own
+    /// recordings and anything that came from someone else, since a
+    /// community macro simulates real input the same as any other once
+    /// it's in your library.
+    pub source: Option<String>,
 }
 
 /// Full macro including its event sequence, used for playback.
@@ -187,6 +200,7 @@ pub struct MacroItem {
     pub duration_ms: i64,
     pub hotkey: Option<String>,
     pub tags: Vec<String>,
+    pub source: Option<String>,
     pub events: Vec<MacroEvent>,
 }
 
@@ -217,9 +231,22 @@ pub fn insert_macro(
     Ok(())
 }
 
+/// Sets the `source` column for a macro. Called right after `insert_macro`
+/// by import paths that know where the macro came from -- kept as a
+/// separate call rather than a parameter on `insert_macro` itself, so
+/// `save_macro_recording` (a local recording, source always None) doesn't
+/// need to pass a value it'll never use.
+pub fn set_macro_source_item(conn: &Connection, id: &str, source: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE macros SET source = ?1 WHERE id = ?2",
+        rusqlite::params![source, id],
+    )?;
+    Ok(())
+}
+
 pub fn get_macros(conn: &Connection) -> Result<Vec<MacroSummary>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, created_at, event_count, duration_ms, hotkey, tags
+        "SELECT id, name, created_at, event_count, duration_ms, hotkey, tags, source
          FROM macros ORDER BY created_at DESC",
     )?;
 
@@ -232,6 +259,7 @@ pub fn get_macros(conn: &Connection) -> Result<Vec<MacroSummary>> {
             duration_ms: row.get(4)?,
             hotkey: row.get(5)?,
             tags: parse_tags(row.get(6)?),
+            source: row.get(7)?,
         })
     })?;
 
@@ -245,7 +273,7 @@ pub fn get_macros(conn: &Connection) -> Result<Vec<MacroSummary>> {
 
 pub fn get_macro_by_id(conn: &Connection, id: &str) -> Result<Option<MacroItem>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, created_at, event_count, duration_ms, events_json, hotkey, tags
+        "SELECT id, name, created_at, event_count, duration_ms, events_json, hotkey, tags, source
          FROM macros WHERE id = ?1",
     )?;
 
@@ -264,10 +292,12 @@ pub fn get_macro_by_id(conn: &Connection, id: &str) -> Result<Option<MacroItem>>
             events,
             hotkey: row.get(6)?,
             tags: parse_tags(row.get(7)?),
+            source: row.get(8)?,
         }))
     } else {
         Ok(None)
     }
+
 }
 
 pub fn set_macro_tags(conn: &Connection, id: &str, tags: &[String]) -> Result<()> {
