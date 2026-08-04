@@ -72,10 +72,24 @@ create policy "Anyone can submit a fragment"
 -- goes through the Supabase dashboard directly (which uses the
 -- service_role key, bypassing RLS entirely -- never ship that key in the
 -- app).
---
--- download_count therefore also can't be incremented yet (that's an
--- UPDATE). When that's wanted, the standard Supabase pattern is a
--- SECURITY DEFINER Postgres function exposed as an RPC
--- (supabase.rpc('increment_download_count', { fragment_id })) rather than
--- a blanket UPDATE policy -- intentionally not building that yet to avoid
--- guessing at a shape before the read/submit flow is even live.
+
+-- download_count can't be incremented via a plain UPDATE (no policy
+-- allows it, deliberately -- see above). This function is a narrow,
+-- single-purpose exception: SECURITY DEFINER makes it run with the
+-- privileges of whoever defined it (bypassing RLS for this one operation
+-- only), while still being callable by the anon role via RPC. It can only
+-- ever do exactly this one increment -- it's not a general escape hatch.
+create or replace function increment_download_count(fragment_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update fragments
+  set download_count = download_count + 1
+  where id = fragment_id;
+end;
+$$;
+
+grant execute on function increment_download_count(uuid) to anon, authenticated;
