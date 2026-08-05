@@ -7,6 +7,8 @@ import SystemMonitor from './components/features/monitor/SystemMonitor';
 import MacroManager from './components/features/macro/MacroManager';
 import FragmentLibrary from './components/features/fragments/FragmentLibrary';
 import CommunityLibrary from './components/features/community/CommunityLibrary';
+import CommandPalette from './components/features/command/CommandPalette';
+import SettingsPage from './components/features/settings/SettingsPage';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -14,7 +16,7 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardHome />;
+        return <DashboardHome setActiveTab={setActiveTab} />;
       case 'clipboard':
         return <ClipboardHistory />;
       case 'macros':
@@ -26,21 +28,19 @@ function App() {
       case 'community':
         return <CommunityLibrary />;
       case 'settings':
-        return (
-          <div>
-            <h1 className="text-3xl font-bold text-frag-text">Settings</h1>
-            <p className="text-frag-muted mt-2">Coming soon...</p>
-          </div>
-        );
+        return <SettingsPage />;
       default:
-        return <DashboardHome />;
+        return <DashboardHome setActiveTab={setActiveTab} />;
     }
   };
 
   return (
-    <MainLayout activeTab={activeTab} setActiveTab={setActiveTab}>
-      {renderContent()}
-    </MainLayout>
+    <>
+      <MainLayout activeTab={activeTab} setActiveTab={setActiveTab}>
+        {renderContent()}
+      </MainLayout>
+      <CommandPalette setActiveTab={setActiveTab} />
+    </>
   );
 }
 
