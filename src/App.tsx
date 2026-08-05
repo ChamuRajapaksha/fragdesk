@@ -12,7 +12,6 @@ import SettingsPage from './components/features/settings/SettingsPage';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
