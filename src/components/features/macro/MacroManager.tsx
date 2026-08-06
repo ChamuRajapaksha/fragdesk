@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { extractErrorMessage, isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
+import { useAuth } from "../../../community/useAuth";
+
+
 
 interface MacroSummary {
     id: string;
@@ -94,6 +97,8 @@ export default function MacroManager() {
     const renameInputRef = useRef<HTMLInputElement>(null);
     const confirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const importFileInputRef = useRef<HTMLInputElement>(null);
+
+    const { user } = useAuth();
 
     useEffect(() => {
         refreshMacros();
@@ -362,18 +367,18 @@ export default function MacroManager() {
             return;
         }
 
+        if (!user) {
+            setError("Sign in from the Community Library tab first to share macros.");
+            return;
+        }
+
         if (confirmShareId === id) {
-            // Second click within the window — actually submit.
             if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
             setConfirmShareId(null);
             void handleShare(id);
             return;
         }
 
-        // First click — arm confirmation. Sharing is currently one-way:
-        // there's no update/delete policy on the fragments table yet (no
-        // auth exists to prove ownership), so once submitted, it can't be
-        // pulled back from inside the app.
         setConfirmShareId(id);
         if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
         shareConfirmResetTimer.current = setTimeout(() => setConfirmShareId(null), 4000);
@@ -381,12 +386,13 @@ export default function MacroManager() {
 
     async function handleShare(id: string) {
         if (!supabase) return;
+        if (!user) {
+            setError("Sign in from the Community Library tab first to share macros.");
+            return;
+        }
         setError(null);
         setSharingId(id);
         try {
-            // Reuse the exact same envelope local export already produces
-            // (see src-tauri/src/fragments.rs) -- no separate "prepare for
-            // upload" logic needed, it's the identical shape either way.
             const json = await invoke<string>("export_macro_json", { id });
             const fragment = JSON.parse(json) as {
                 fragment_type: string;
@@ -402,6 +408,7 @@ export default function MacroManager() {
                 tags: fragment.tags,
                 format_version: fragment.format_version,
                 payload: fragment.payload,
+                submitted_by: user.id,
             });
 
             if (insertError) throw insertError;
