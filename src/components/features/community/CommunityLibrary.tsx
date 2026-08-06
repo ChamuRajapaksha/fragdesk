@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { extractErrorMessage, isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
+import { useAuth } from "../../../community/useAuth";
+import AuthPanel from "./AuthPanel";
 
 interface CommunityFragmentRow {
     id: string;
@@ -34,12 +36,6 @@ const TYPE_LABELS: Record<string, string> = {
     macro: "Macro",
 };
 
-/// Summarizes a macro's raw event list into human-readable counts, purely
-/// client-side -- the full payload is already in memory from the browse
-/// query, no extra backend call needed. This is the actual safety gate:
-/// a community macro simulates real keyboard/mouse input the moment it's
-/// played, so someone should see roughly what it does before it lands in
-/// their library, not just a name and a tag.
 function summarizeMacroPayload(payload: unknown): MacroPreviewStats | null {
     if (
         typeof payload !== "object" ||
@@ -86,6 +82,7 @@ function summarizeMacroPayload(payload: unknown): MacroPreviewStats | null {
 }
 
 export default function CommunityLibrary() {
+    const { user, loading: authLoading, signOut } = useAuth();
     const [fragments, setFragments] = useState<CommunityFragmentRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -93,6 +90,8 @@ export default function CommunityLibrary() {
     const [importingId, setImportingId] = useState<string | null>(null);
     const [previewOpenId, setPreviewOpenId] = useState<string | null>(null);
     const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
     useEffect(() => {
         if (isSupabaseConfigured) {
@@ -126,11 +125,6 @@ export default function CommunityLibrary() {
         setError(null);
         setImportingId(row.id);
         try {
-            // Reconstruct the same Fragment envelope the backend already
-            // knows how to parse (see src-tauri/src/fragments.rs) -- the
-            // Supabase row and the local export/import JSON shape are
-            // deliberately kept structurally identical, so this is just a
-            // straight reassembly, not a translation.
             const fragmentJson = JSON.stringify({
                 format_version: row.format_version,
                 name: row.name,
@@ -144,9 +138,6 @@ export default function CommunityLibrary() {
             setImportedIds((prev) => new Set(prev).add(row.id));
             setPreviewOpenId(null);
 
-            // Best-effort -- a failed count bump shouldn't undo a
-            // successful import, so this is deliberately not in the same
-            // try block's failure path.
             supabase
                 .rpc("increment_download_count", { fragment_id: row.id })
                 .then(({ error: rpcError }) => {
@@ -164,6 +155,31 @@ export default function CommunityLibrary() {
             setError(extractErrorMessage(err));
         } finally {
             setImportingId(null);
+        }
+    }
+
+    function handleDeleteClick(id: string) {
+        if (confirmDeleteId === id) {
+            void handleDelete(id);
+            return;
+        }
+        setConfirmDeleteId(id);
+        setTimeout(() => setConfirmDeleteId((cur) => (cur === id ? null : cur)), 4000);
+    }
+
+    async function handleDelete(id: string) {
+        if (!supabase) return;
+        setError(null);
+        setDeletingId(id);
+        setConfirmDeleteId(null);
+        try {
+            const { error: deleteError } = await supabase.from("fragments").delete().eq("id", id);
+            if (deleteError) throw deleteError;
+            setFragments((prev) => prev.filter((f) => f.id !== id));
+        } catch (err) {
+            setError(extractErrorMessage(err));
+        } finally {
+            setDeletingId(null);
         }
     }
 
@@ -195,9 +211,7 @@ export default function CommunityLibrary() {
                         <code className="text-[#00d9ff]">VITE_SUPABASE_URL</code> and{" "}
                         <code className="text-[#00d9ff]">VITE_SUPABASE_ANON_KEY</code> to your{" "}
                         <code className="text-[#00d9ff]">.env</code> file, then restart the dev
-                        server. In the meantime, check out the bundled{" "}
-                        <span className="text-gray-200">Fragment Library</span> tab for local
-                        starter content.
+                        server.
                     </p>
                 </div>
             </div>
@@ -206,13 +220,35 @@ export default function CommunityLibrary() {
 
     return (
         <div className="min-h-full bg-[#0a0e27] text-white p-6 space-y-6">
-            <div>
-                <h1 className="text-2xl font-bold text-[#00d9ff]">Community Library</h1>
-                <p className="text-sm text-gray-400 mt-1">
-                    Browse and import fragments shared by the community. Macros simulate real
-                    keyboard/mouse input — preview what one does before importing it.
-                </p>
+            <div className="flex items-start justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold text-[#00d9ff]">Community Library</h1>
+                    <p className="text-sm text-gray-400 mt-1">
+                        Browse and import fragments shared by the community. Macros simulate real
+                        keyboard/mouse input — preview what one does before importing it.
+                    </p>
+                </div>
+                {!authLoading && user && (
+                    <div className="text-right text-xs text-gray-400 shrink-0 ml-4">
+                        <p>
+                            Signed in as <span className="text-gray-200">{user.email}</span>
+                        </p>
+                        <button onClick={() => signOut()} className="text-[#ff3366] hover:underline">
+                            Sign out
+                        </button>
+                    </div>
+                )}
             </div>
+
+            {!authLoading && !user && (
+                <div className="space-y-2">
+                    <p className="text-sm text-gray-400">
+                        Sign in to submit or manage your own fragments. Browsing and importing
+                        don't require an account.
+                    </p>
+                    <AuthPanel onAuthed={refreshFragments} />
+                </div>
+            )}
 
             {error && (
                 <div className="bg-[#ff3366]/10 border border-[#ff3366]/40 text-[#ff3366] text-sm rounded-lg px-4 py-2">
@@ -262,6 +298,9 @@ export default function CommunityLibrary() {
                         const isImporting = importingId === row.id;
                         const isPreviewOpen = previewOpenId === row.id;
                         const stats = isPreviewOpen ? summarizeMacroPayload(row.payload) : null;
+                        const isOwner = user !== null && row.submitted_by === user.id;
+                        const isDeleting = deletingId === row.id;
+                        const isConfirmingDelete = confirmDeleteId === row.id;
 
                         return (
                             <div
@@ -275,6 +314,11 @@ export default function CommunityLibrary() {
                                             <span className="text-xs bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
                                                 {TYPE_LABELS[row.fragment_type] ?? row.fragment_type}
                                             </span>
+                                            {isOwner && (
+                                                <span className="text-xs bg-white/5 text-gray-400 rounded px-1.5 py-0.5">
+                                                    yours
+                                                </span>
+                                            )}
                                         </div>
                                         <p className="text-xs text-gray-500 mt-0.5">
                                             {row.download_count} downloads
@@ -293,20 +337,39 @@ export default function CommunityLibrary() {
                                         )}
                                     </div>
 
-                                    {isImported ? (
-                                        <span className="px-4 py-2 rounded-lg text-sm font-medium bg-[#00ff88]/15 text-[#00ff88] border border-[#00ff88]/30">
-                                            Imported ✓
-                                        </span>
-                                    ) : (
-                                        <button
-                                            onClick={() =>
-                                                setPreviewOpenId(isPreviewOpen ? null : row.id)
-                                            }
-                                            className="px-4 py-2 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-gray-300"
-                                        >
-                                            {isPreviewOpen ? "Hide preview" : "Preview"}
-                                        </button>
-                                    )}
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        {isOwner && (
+                                            <button
+                                                onClick={() => handleDeleteClick(row.id)}
+                                                disabled={isDeleting}
+                                                className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 transition-colors ${
+                                                    isConfirmingDelete
+                                                        ? "bg-[#ff3366] text-white"
+                                                        : "bg-white/5 hover:bg-white/10 text-gray-300"
+                                                }`}
+                                            >
+                                                {isDeleting
+                                                    ? "Deleting..."
+                                                    : isConfirmingDelete
+                                                    ? "Confirm?"
+                                                    : "Delete"}
+                                            </button>
+                                        )}
+                                        {isImported ? (
+                                            <span className="px-4 py-2 rounded-lg text-sm font-medium bg-[#00ff88]/15 text-[#00ff88] border border-[#00ff88]/30">
+                                                Imported ✓
+                                            </span>
+                                        ) : (
+                                            <button
+                                                onClick={() =>
+                                                    setPreviewOpenId(isPreviewOpen ? null : row.id)
+                                                }
+                                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-gray-300"
+                                            >
+                                                {isPreviewOpen ? "Hide preview" : "Preview"}
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {isPreviewOpen && (
