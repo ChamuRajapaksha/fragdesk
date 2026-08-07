@@ -94,7 +94,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
           Welcome to FragDesk
         </h1>
         <p className="text-frag-muted text-lg">
-          Your all-in-one application for productivity and performance
+          Utility and Macro aggregator designed for performance.
         </p>
       </div>
 
