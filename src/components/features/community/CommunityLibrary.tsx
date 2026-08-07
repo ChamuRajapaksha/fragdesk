@@ -92,6 +92,9 @@ export default function CommunityLibrary() {
     const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+    const [showOnlyMine, setShowOnlyMine] = useState(false);
+    const [addingTagToId, setAddingTagToId] = useState<string | null>(null);
+    const [tagDraft, setTagDraft] = useState("");
 
     useEffect(() => {
         if (isSupabaseConfigured) {
@@ -183,6 +186,50 @@ export default function CommunityLibrary() {
         }
     }
 
+    // Editing tags on a fragment you own hits the same table, gated by the
+    // "Owners can update their own fragments" RLS policy added alongside
+    // auth -- Postgres enforces auth.uid() = submitted_by on its own, this
+    // is just the UI for a capability that already existed at the DB level.
+    async function handleAddTag(row: CommunityFragmentRow) {
+        const tag = tagDraft.trim();
+        setTagDraft("");
+        setAddingTagToId(null);
+        if (!tag || row.tags.includes(tag) || !supabase) return;
+
+        const newTags = [...row.tags, tag];
+        setFragments((prev) =>
+            prev.map((f) => (f.id === row.id ? { ...f, tags: newTags } : f))
+        );
+        try {
+            const { error: updateError } = await supabase
+                .from("fragments")
+                .update({ tags: newTags })
+                .eq("id", row.id);
+            if (updateError) throw updateError;
+        } catch (err) {
+            setError(extractErrorMessage(err));
+            await refreshFragments();
+        }
+    }
+
+    async function handleRemoveTag(row: CommunityFragmentRow, tag: string) {
+        if (!supabase) return;
+        const newTags = row.tags.filter((t) => t !== tag);
+        setFragments((prev) =>
+            prev.map((f) => (f.id === row.id ? { ...f, tags: newTags } : f))
+        );
+        try {
+            const { error: updateError } = await supabase
+                .from("fragments")
+                .update({ tags: newTags })
+                .eq("id", row.id);
+            if (updateError) throw updateError;
+        } catch (err) {
+            setError(extractErrorMessage(err));
+            await refreshFragments();
+        }
+    }
+
     function toggleTagFilter(tag: string) {
         setActiveTagFilters((prev) =>
             prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
@@ -190,10 +237,11 @@ export default function CommunityLibrary() {
     }
 
     const allTags = Array.from(new Set(fragments.flatMap((f) => f.tags))).sort();
-    const visibleFragments =
-        activeTagFilters.length === 0
-            ? fragments
-            : fragments.filter((f) => f.tags.some((t) => activeTagFilters.includes(t)));
+    const visibleFragments = fragments
+        .filter((f) => (showOnlyMine ? user !== null && f.submitted_by === user.id : true))
+        .filter((f) =>
+            activeTagFilters.length === 0 ? true : f.tags.some((t) => activeTagFilters.includes(t))
+        );
 
     if (!isSupabaseConfigured) {
         return (
@@ -256,9 +304,21 @@ export default function CommunityLibrary() {
                 </div>
             )}
 
-            {!loading && allTags.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                    {allTags.map((tag) => {
+            <div className="flex flex-wrap items-center gap-2">
+                {user && (
+                    <button
+                        onClick={() => setShowOnlyMine((v) => !v)}
+                        className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                            showOnlyMine
+                                ? "bg-[#b026ff]/15 border-[#b026ff]/50 text-[#b026ff]"
+                                : "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200"
+                        }`}
+                    >
+                        My submissions
+                    </button>
+                )}
+                {!loading &&
+                    allTags.map((tag) => {
                         const active = activeTagFilters.includes(tag);
                         return (
                             <button
@@ -274,23 +334,24 @@ export default function CommunityLibrary() {
                             </button>
                         );
                     })}
-                    {activeTagFilters.length > 0 && (
-                        <button
-                            onClick={() => setActiveTagFilters([])}
-                            className="text-xs text-gray-500 hover:text-gray-300 ml-1"
-                        >
-                            clear filters
-                        </button>
-                    )}
-                </div>
-            )}
+                {activeTagFilters.length > 0 && (
+                    <button
+                        onClick={() => setActiveTagFilters([])}
+                        className="text-xs text-gray-500 hover:text-gray-300"
+                    >
+                        clear tag filters
+                    </button>
+                )}
+            </div>
 
             {loading ? (
                 <p className="text-gray-500 text-sm">Loading...</p>
             ) : fragments.length === 0 ? (
                 <p className="text-gray-500 text-sm">No community fragments yet.</p>
             ) : visibleFragments.length === 0 ? (
-                <p className="text-gray-500 text-sm">No fragments match the selected tags.</p>
+                <p className="text-gray-500 text-sm">
+                    {showOnlyMine ? "You haven't shared anything yet." : "No fragments match the selected tags."}
+                </p>
             ) : (
                 <div className="space-y-2">
                     {visibleFragments.map((row) => {
@@ -301,6 +362,7 @@ export default function CommunityLibrary() {
                         const isOwner = user !== null && row.submitted_by === user.id;
                         const isDeleting = deletingId === row.id;
                         const isConfirmingDelete = confirmDeleteId === row.id;
+                        const isAddingTag = addingTagToId === row.id;
 
                         return (
                             <div
@@ -323,21 +385,61 @@ export default function CommunityLibrary() {
                                         <p className="text-xs text-gray-500 mt-0.5">
                                             {row.download_count} downloads
                                         </p>
-                                        {row.tags.length > 0 && (
-                                            <div className="flex flex-wrap gap-1 mt-1.5">
-                                                {row.tags.map((tag) => (
+
+                                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                                            {row.tags.map((tag) =>
+                                                isOwner ? (
+                                                    <span
+                                                        key={tag}
+                                                        className="inline-flex items-center gap-1 text-xs bg-white/5 text-gray-300 rounded-full px-2 py-0.5"
+                                                    >
+                                                        {tag}
+                                                        <button
+                                                            onClick={() => handleRemoveTag(row, tag)}
+                                                            className="text-gray-500 hover:text-[#ff3366]"
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </span>
+                                                ) : (
                                                     <span
                                                         key={tag}
                                                         className="text-xs bg-white/5 text-gray-400 rounded-full px-2 py-0.5"
                                                     >
                                                         {tag}
                                                     </span>
+                                                )
+                                            )}
+                                            {isOwner &&
+                                                (isAddingTag ? (
+                                                    <input
+                                                        autoFocus
+                                                        type="text"
+                                                        value={tagDraft}
+                                                        onChange={(e) => setTagDraft(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") handleAddTag(row);
+                                                            if (e.key === "Escape") {
+                                                                setAddingTagToId(null);
+                                                                setTagDraft("");
+                                                            }
+                                                        }}
+                                                        onBlur={() => handleAddTag(row)}
+                                                        placeholder="tag name"
+                                                        className="text-xs bg-[#0a0e27] border border-white/10 rounded-full px-2 py-0.5 w-24 focus:outline-none focus:border-[#00d9ff]"
+                                                    />
+                                                ) : (
+                                                    <button
+                                                        onClick={() => setAddingTagToId(row.id)}
+                                                        className="text-xs text-gray-500 hover:text-[#00d9ff]"
+                                                    >
+                                                        + tag
+                                                    </button>
                                                 ))}
-                                            </div>
-                                        )}
+                                        </div>
                                     </div>
 
-                                    <div className="flex items-center gap-2 shrink-0">
+                                    <div className="flex items-center gap-2 shrink-0 ml-4">
                                         {isOwner && (
                                             <button
                                                 onClick={() => handleDeleteClick(row.id)}
