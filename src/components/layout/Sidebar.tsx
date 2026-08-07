@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion';
 import { Clipboard, Zap, Activity, Settings, Layers, Users } from 'lucide-react';
+import { useAuth } from '../../community/useAuth';
+import { isSupabaseConfigured } from '../../community/supabaseClient';
 
 interface SidebarProps {
   activeTab: string;
@@ -17,6 +19,8 @@ const menuItems = [
 ];
 
 export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
+  const { user, loading: authLoading } = useAuth();
+
   return (
     <div className="w-64 bg-frag-surface border-r border-frag-border h-screen flex flex-col">
       {/* Logo */}
@@ -61,6 +65,23 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
           );
         })}
       </nav>
+
+      {/* Auth status */}
+      {isSupabaseConfigured && !authLoading && (
+        <button
+          onClick={() => setActiveTab('community')}
+          className="mx-4 mb-2 px-3 py-2 rounded-lg bg-frag-bg hover:bg-frag-bg/70 border border-frag-border text-left transition-colors"
+        >
+          {user ? (
+            <>
+              <p className="text-xs text-frag-muted">Signed in as</p>
+              <p className="text-sm text-frag-text truncate">{user.email}</p>
+            </>
+          ) : (
+            <p className="text-sm text-frag-primary">Sign in to share fragments</p>
+          )}
+        </button>
+      )}
 
       {/* Footer */}
       <div className="p-4 border-t border-frag-border space-y-2">

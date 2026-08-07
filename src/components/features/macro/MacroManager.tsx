@@ -47,7 +47,7 @@ function formatDate(unixSeconds: number): string {
     return new Date(unixSeconds * 1000).toLocaleString();
 }
 
-export default function MacroManager() {
+export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
     const [macros, setMacros] = useState<MacroSummary[]>([]);
     const [isRecording, setIsRecording] = useState(false);
     const [liveCount, setLiveCount] = useState(0);
@@ -368,7 +368,9 @@ export default function MacroManager() {
         }
 
         if (!user) {
-            setError("Sign in from the Community Library tab first to share macros.");
+            // Jump straight to Community's sign-in panel instead of showing a
+            // passive error the person has to interpret and act on themselves.
+            setActiveTab("community");
             return;
         }
 

@@ -12,6 +12,7 @@ import SettingsPage from './components/features/settings/SettingsPage';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -19,7 +20,7 @@ function App() {
       case 'clipboard':
         return <ClipboardHistory />;
       case 'macros':
-        return <MacroManager />;
+        return <MacroManager setActiveTab={setActiveTab} />;
       case 'monitor':
         return <SystemMonitor />;
       case 'fragments':
