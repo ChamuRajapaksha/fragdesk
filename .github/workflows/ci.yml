@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust-check:
+    name: Rust (cargo check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri + rdev + the global-shortcut plugin all need real system
+      # libraries to even compile, not just to run -- this list is a
+      # best-effort based on documented requirements (webkit2gtk for
+      # Tauri's webview, libxdo-dev for rdev's simulate/listen, the rest
+      # are Tauri's standard Linux build deps). If cargo check fails on
+      # a missing library, the error will name it -- add it here.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            libssl-dev \
+            libxdo-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --all-targets
+
+  frontend-build:
+    name: Frontend (npm build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (includes TypeScript type-checking)
+        run: npm run build
