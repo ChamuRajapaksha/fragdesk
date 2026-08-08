@@ -36,6 +36,13 @@ const TYPE_LABELS: Record<string, string> = {
     macro: "Macro",
 };
 
+const REPORT_REASONS: { value: string; label: string }[] = [
+    { value: "not_as_described", label: "Doesn't do what it claims" },
+    { value: "offensive", label: "Offensive content" },
+    { value: "spam", label: "Spam or duplicate" },
+    { value: "other", label: "Other" },
+];
+
 function summarizeMacroPayload(payload: unknown): MacroPreviewStats | null {
     if (
         typeof payload !== "object" ||
@@ -95,6 +102,9 @@ export default function CommunityLibrary() {
     const [showOnlyMine, setShowOnlyMine] = useState(false);
     const [addingTagToId, setAddingTagToId] = useState<string | null>(null);
     const [tagDraft, setTagDraft] = useState("");
+    const [reportingId, setReportingId] = useState<string | null>(null);
+    const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
+    const [submittingReportId, setSubmittingReportId] = useState<string | null>(null);
 
     useEffect(() => {
         if (isSupabaseConfigured) {
@@ -103,6 +113,23 @@ export default function CommunityLibrary() {
             setLoading(false);
         }
     }, []);
+
+    // Load which fragments this user has already reported, so the button
+    // reflects that across sessions, not just within this page load.
+    useEffect(() => {
+        if (!supabase || !user) return;
+        supabase
+            .from("fragment_reports")
+            .select("fragment_id")
+            .eq("reporter", user.id)
+            .then(({ data, error: reportsError }) => {
+                if (reportsError) {
+                    console.warn("Failed to load existing reports:", reportsError);
+                    return;
+                }
+                setReportedIds(new Set((data ?? []).map((r) => r.fragment_id as string)));
+            });
+    }, [user]);
 
     async function refreshFragments() {
         if (!supabase) return;
@@ -186,10 +213,6 @@ export default function CommunityLibrary() {
         }
     }
 
-    // Editing tags on a fragment you own hits the same table, gated by the
-    // "Owners can update their own fragments" RLS policy added alongside
-    // auth -- Postgres enforces auth.uid() = submitted_by on its own, this
-    // is just the UI for a capability that already existed at the DB level.
     async function handleAddTag(row: CommunityFragmentRow) {
         const tag = tagDraft.trim();
         setTagDraft("");
@@ -227,6 +250,31 @@ export default function CommunityLibrary() {
         } catch (err) {
             setError(extractErrorMessage(err));
             await refreshFragments();
+        }
+    }
+
+    async function handleSubmitReport(row: CommunityFragmentRow, reason: string) {
+        if (!supabase || !user) return;
+        setSubmittingReportId(row.id);
+        setError(null);
+        try {
+            const { error: insertError } = await supabase.from("fragment_reports").insert({
+                fragment_id: row.id,
+                reporter: user.id,
+                reason,
+            });
+
+            // A unique-violation (code 23505) just means they already
+            // reported this one -- treat that as success rather than
+            // surfacing a confusing DB error for a harmless double-click.
+            if (insertError && insertError.code !== "23505") throw insertError;
+
+            setReportedIds((prev) => new Set(prev).add(row.id));
+            setReportingId(null);
+        } catch (err) {
+            setError(extractErrorMessage(err));
+        } finally {
+            setSubmittingReportId(null);
         }
     }
 
@@ -363,6 +411,9 @@ export default function CommunityLibrary() {
                         const isDeleting = deletingId === row.id;
                         const isConfirmingDelete = confirmDeleteId === row.id;
                         const isAddingTag = addingTagToId === row.id;
+                        const isReportOpen = reportingId === row.id;
+                        const hasReported = reportedIds.has(row.id);
+                        const isSubmittingReport = submittingReportId === row.id;
 
                         return (
                             <div
@@ -457,6 +508,19 @@ export default function CommunityLibrary() {
                                                     : "Delete"}
                                             </button>
                                         )}
+                                        {!isOwner && user && (
+                                            <button
+                                                onClick={() =>
+                                                    !hasReported &&
+                                                    setReportingId(isReportOpen ? null : row.id)
+                                                }
+                                                disabled={hasReported}
+                                                title={hasReported ? "You've already reported this" : "Report this fragment"}
+                                                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-gray-400 hover:text-[#ff3366] disabled:opacity-40 disabled:hover:text-gray-400 transition-colors"
+                                            >
+                                                {hasReported ? "Reported" : "Report"}
+                                            </button>
+                                        )}
                                         {isImported ? (
                                             <span className="px-4 py-2 rounded-lg text-sm font-medium bg-[#00ff88]/15 text-[#00ff88] border border-[#00ff88]/30">
                                                 Imported ✓
@@ -473,6 +537,30 @@ export default function CommunityLibrary() {
                                         )}
                                     </div>
                                 </div>
+
+                                {isReportOpen && (
+                                    <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
+                                        <p className="text-xs text-gray-400">Why are you reporting this?</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {REPORT_REASONS.map((r) => (
+                                                <button
+                                                    key={r.value}
+                                                    onClick={() => handleSubmitReport(row, r.value)}
+                                                    disabled={isSubmittingReport}
+                                                    className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-[#ff3366]/10 hover:text-[#ff3366] text-gray-300 disabled:opacity-40 transition-colors"
+                                                >
+                                                    {r.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <button
+                                            onClick={() => setReportingId(null)}
+                                            className="text-xs text-gray-500 hover:text-gray-300"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                )}
 
                                 {isPreviewOpen && (
                                     <div className="mt-3 pt-3 border-t border-white/5 space-y-3">
