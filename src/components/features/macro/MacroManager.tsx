@@ -170,6 +170,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
 
     useEffect(() => {
         if (!capturingHotkeyId) return;
+        const targetId = capturingHotkeyId; // narrowed to `string`, safe to close over
 
         function onKeyDown(e: KeyboardEvent) {
             e.preventDefault();
@@ -179,23 +180,15 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                 setCapturingHotkeyId(null);
                 return;
             }
-
-            // Ignore a bare modifier press — wait for the actual key that
-            // completes the combo.
             if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return;
 
             const mods: string[] = [];
             if (e.ctrlKey || e.metaKey) mods.push("CommandOrControl");
             if (e.altKey) mods.push("Alt");
             if (e.shiftKey) mods.push("Shift");
-
-            // e.code (e.g. "KeyA", "Digit1", "F1", "Escape") maps closely to
-            // the key-code names tauri-plugin-global-shortcut expects. If a
-            // particular key fails to register, this is the first place to
-            // check — the crate's accepted names may differ slightly.
             const combo = [...mods, e.code].join("+");
 
-            void handleSetHotkey(capturingHotkeyId, combo);
+            void handleSetHotkey(targetId, combo);   // <-- use targetId instead
         }
 
         document.addEventListener("keydown", onKeyDown, true);
