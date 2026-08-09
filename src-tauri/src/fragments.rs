@@ -13,14 +13,14 @@ pub const FRAGMENT_FORMAT_VERSION: u32 = 1;
 /// `fragment_type` field and route to the right handler without the
 /// importer needing to know in advance what it's looking at.
 ///
-/// Only `Macro` exists today. Adding a new fragment type later (clipboard
-/// snippets, tips/configs, etc.) means adding a variant here -- the
-/// `Fragment` wrapper below, and every export/import command built on it,
-/// stays unchanged.
+/// Adding a new fragment type means adding a variant here -- the
+/// `Fragment` wrapper below, and every export/import command built on
+/// it, stays unchanged.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "fragment_type", content = "payload", rename_all = "snake_case")]
 pub enum FragmentPayload {
     Macro { events: Vec<MacroEvent> },
+    ClipboardSnippet { content: String },
 }
 
 /// The on-disk shape of any exported fragment -- what gets written to a
