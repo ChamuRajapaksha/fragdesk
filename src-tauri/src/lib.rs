@@ -4,7 +4,7 @@ mod fragments;
 
 use commands::clipboard::{
     copy_to_clipboard, delete_clipboard, get_clipboard_items, get_current_clipboard,
-    save_clipboard_text, start_clipboard_monitor, stop_clipboard_monitor, toggle_pin,
+    save_clipboard_text, start_clipboard_monitor, stop_clipboard_monitor, toggle_pin, export_clipboard_snippet_json, import_clipboard_snippet_json,
     ClipboardMonitor,
 };
 use commands::macros::{
@@ -95,6 +95,8 @@ pub fn run() {
             delete_clipboard,
             toggle_pin,
             copy_to_clipboard,
+            export_clipboard_snippet_json,
+            import_clipboard_snippet_json,
             // Monitor commands
             get_system_stats,
             get_cpu_per_core,
