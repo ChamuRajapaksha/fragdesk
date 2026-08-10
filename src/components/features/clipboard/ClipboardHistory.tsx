@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Pin, Trash2, Search, PlayCircle, StopCircle } from 'lucide-react';
+import { Copy, Pin, Trash2, Search, PlayCircle, StopCircle, Share2 } from 'lucide-react';
+import { extractErrorMessage, isSupabaseConfigured, supabase } from '../../../community/supabaseClient';
+import { useAuth } from '../../../community/useAuth';
 
 interface ClipboardItem {
   id: number;
@@ -11,16 +13,28 @@ interface ClipboardItem {
   is_pinned: boolean;
 }
 
-export default function ClipboardHistory() {
+interface ClipboardHistoryProps {
+  setActiveTab: (tab: string) => void;
+}
+
+export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps) {
+  const { user } = useAuth();
   const [items, setItems] = useState<ClipboardItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isMonitoring, setIsMonitoring] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Sharing: which item is currently showing the "name it" prompt, plus
+  // the draft name, plus which item id is mid-submit / already shared.
+  const [sharingItemId, setSharingItemId] = useState<number | null>(null);
+  const [shareNameDraft, setShareNameDraft] = useState('');
+  const [submittingShareId, setSubmittingShareId] = useState<number | null>(null);
+  const [sharedIds, setSharedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     loadClipboardHistory();
-    
-    // Listen for clipboard updates
+
     const unlisten = listen('clipboard-updated', () => {
       loadClipboardHistory();
     });
@@ -33,7 +47,6 @@ export default function ClipboardHistory() {
   const loadClipboardHistory = async () => {
     try {
       const result = await invoke<ClipboardItem[]>('get_clipboard_items', { limit: 100 });
-      // Sort: pinned first, then by timestamp
       const sorted = result.sort((a, b) => {
         if (a.is_pinned && !b.is_pinned) return -1;
         if (!a.is_pinned && b.is_pinned) return 1;
@@ -96,6 +109,59 @@ export default function ClipboardHistory() {
       console.error('Failed to toggle pin:', error);
     }
   };
+
+  function handleShareClick(item: ClipboardItem) {
+    if (!isSupabaseConfigured) {
+      setError("Community sharing isn't set up yet — add Supabase credentials to .env first.");
+      return;
+    }
+    if (!user) {
+      setActiveTab('community');
+      return;
+    }
+    setSharingItemId(item.id);
+    setShareNameDraft('');
+  }
+
+  async function handleSubmitShare(item: ClipboardItem) {
+    if (!supabase || !user) return;
+    const name = shareNameDraft.trim();
+    if (!name) return;
+
+    setSubmittingShareId(item.id);
+    setError(null);
+    try {
+      const json = await invoke<string>('export_clipboard_snippet_json', {
+        content: item.content,
+        name,
+        tags: [],
+      });
+      const fragment = JSON.parse(json) as {
+        fragment_type: string;
+        name: string;
+        tags: string[];
+        format_version: number;
+        payload: unknown;
+      };
+
+      const { error: insertError } = await supabase.from('fragments').insert({
+        fragment_type: fragment.fragment_type,
+        name: fragment.name,
+        tags: fragment.tags,
+        format_version: fragment.format_version,
+        payload: fragment.payload,
+        submitted_by: user.id,
+      });
+
+      if (insertError) throw insertError;
+      setSharedIds((prev) => new Set(prev).add(item.id));
+      setSharingItemId(null);
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setSubmittingShareId(null);
+    }
+  }
 
   const filteredItems = items.filter(item =>
     item.content.toLowerCase().includes(searchQuery.toLowerCase())
@@ -163,6 +229,12 @@ export default function ClipboardHistory() {
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="mb-4 bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2">
+          {error}
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="mb-6">
@@ -233,6 +305,36 @@ export default function ClipboardHistory() {
                         {item.content.length} characters
                       </p>
                     </div>
+
+                    {sharingItemId === item.id && (
+                      <div className="flex gap-2 mt-2">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={shareNameDraft}
+                          onChange={(e) => setShareNameDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSubmitShare(item);
+                            if (e.key === 'Escape') setSharingItemId(null);
+                          }}
+                          placeholder="Name this snippet..."
+                          className="flex-1 bg-frag-bg border border-frag-border rounded-lg px-2 py-1 text-sm text-frag-text focus:outline-none focus:border-frag-primary"
+                        />
+                        <button
+                          onClick={() => handleSubmitShare(item)}
+                          disabled={!shareNameDraft.trim() || submittingShareId === item.id}
+                          className="px-3 py-1 rounded-lg bg-frag-primary text-frag-bg text-sm font-medium disabled:opacity-40"
+                        >
+                          {submittingShareId === item.id ? '...' : 'Share'}
+                        </button>
+                        <button
+                          onClick={() => setSharingItemId(null)}
+                          className="px-3 py-1 rounded-lg bg-frag-bg text-frag-muted text-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -243,6 +345,22 @@ export default function ClipboardHistory() {
                     >
                       <Copy size={16} />
                     </button>
+                    {sharedIds.has(item.id) ? (
+                      <span
+                        className="p-2 bg-frag-success/10 text-frag-success rounded-lg"
+                        title="Shared to Community Library"
+                      >
+                        <Share2 size={16} />
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleShareClick(item)}
+                        className="p-2 bg-frag-primary/10 text-frag-primary rounded-lg hover:bg-frag-primary/20 transition-colors"
+                        title="Share to Community Library"
+                      >
+                        <Share2 size={16} />
+                      </button>
+                    )}
                     <button
                       onClick={() => togglePin(item.id)}
                       className={`p-2 rounded-lg transition-colors ${

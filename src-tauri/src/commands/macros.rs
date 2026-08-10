@@ -326,7 +326,9 @@ pub fn import_macro_json(json: String, source: Option<String>) -> Result<MacroSu
         );
     }
 
-    let FragmentPayload::Macro { events } = fragment.payload;
+    let FragmentPayload::Macro { events } = fragment.payload else {
+        return Err("This fragment isn't a macro".to_string());
+    };
 
     if events.is_empty() {
         return Err("This macro file has no recorded events".to_string());

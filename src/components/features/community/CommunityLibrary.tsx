@@ -34,6 +34,7 @@ interface MacroPreviewStats {
 
 const TYPE_LABELS: Record<string, string> = {
     macro: "Macro",
+    clipboard_snippet: "Clipboard Snippet",
 };
 
 const REPORT_REASONS: { value: string; label: string }[] = [
@@ -164,7 +165,18 @@ export default function CommunityLibrary() {
                 payload: row.payload,
             });
 
-            await invoke("import_macro_json", { json: fragmentJson, source: "community" });
+            // Each fragment type has its own importer command on the Rust
+            // side, since each inserts into a different local table
+            // (macros vs clipboard_history). Add a case here whenever a
+            // new FragmentPayload variant gets its own import command.
+            if (row.fragment_type === "macro") {
+                await invoke("import_macro_json", { json: fragmentJson, source: "community" });
+            } else if (row.fragment_type === "clipboard_snippet") {
+                await invoke("import_clipboard_snippet_json", { json: fragmentJson });
+            } else {
+                throw new Error(`Don't know how to import fragment type "${row.fragment_type}"`);
+            }
+
             setImportedIds((prev) => new Set(prev).add(row.id));
             setPreviewOpenId(null);
 
@@ -564,38 +576,62 @@ export default function CommunityLibrary() {
 
                                 {isPreviewOpen && (
                                     <div className="mt-3 pt-3 border-t border-white/5 space-y-3">
-                                        {stats ? (
-                                            <div className="text-sm text-gray-300 space-y-1">
-                                                <p>
-                                                    <span className="text-gray-500">
-                                                        This macro will simulate:
-                                                    </span>
-                                                </p>
-                                                <ul className="text-xs text-gray-400 space-y-0.5 pl-4 list-disc">
-                                                    <li>{stats.keyPresses} key press(es)</li>
-                                                    <li>{stats.mouseClicks} mouse click(s)</li>
-                                                    <li>{stats.mouseMoves} mouse movement(s)</li>
-                                                    <li>{stats.wheelScrolls} scroll event(s)</li>
-                                                </ul>
-                                                {stats.distinctKeys.length > 0 && (
-                                                    <p className="text-xs text-gray-500">
-                                                        Keys involved: {stats.distinctKeys.join(", ")}
+                                        {row.fragment_type === "macro" ? (
+                                            stats ? (
+                                                <div className="text-sm text-gray-300 space-y-1">
+                                                    <p>
+                                                        <span className="text-gray-500">
+                                                            This macro will simulate:
+                                                        </span>
                                                     </p>
-                                                )}
+                                                    <ul className="text-xs text-gray-400 space-y-0.5 pl-4 list-disc">
+                                                        <li>{stats.keyPresses} key press(es)</li>
+                                                        <li>{stats.mouseClicks} mouse click(s)</li>
+                                                        <li>{stats.mouseMoves} mouse movement(s)</li>
+                                                        <li>{stats.wheelScrolls} scroll event(s)</li>
+                                                    </ul>
+                                                    {stats.distinctKeys.length > 0 && (
+                                                        <p className="text-xs text-gray-500">
+                                                            Keys involved: {stats.distinctKeys.join(", ")}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs text-gray-500">
+                                                    Couldn't parse this fragment's contents to preview.
+                                                </p>
+                                            )
+                                        ) : row.fragment_type === "clipboard_snippet" ? (
+                                            <div className="text-sm text-gray-300">
+                                                <p className="text-xs text-gray-500 mb-1">Snippet content:</p>
+                                                <p className="bg-[#0a0e27] border border-white/10 rounded-lg px-3 py-2 text-sm break-words whitespace-pre-wrap max-h-32 overflow-y-auto">
+                                                    {typeof row.payload === "object" &&
+                                                    row.payload !== null &&
+                                                    "content" in row.payload
+                                                        ? String((row.payload as { content: unknown }).content)
+                                                        : "(couldn't read content)"}
+                                                </p>
                                             </div>
                                         ) : (
                                             <p className="text-xs text-gray-500">
-                                                Couldn't parse this fragment's contents to preview.
+                                                No preview available for this fragment type.
                                             </p>
                                         )}
-                                        <p className="text-xs text-[#ff3366]">
-                                            Once imported, playing this macro will actually perform
-                                            these actions on your computer.
-                                        </p>
+
+                                        {row.fragment_type === "macro" && (
+                                            <p className="text-xs text-[#ff3366]">
+                                                Once imported, playing this macro will actually perform
+                                                these actions on your computer.
+                                            </p>
+                                        )}
+
                                         <div className="flex gap-2">
                                             <button
                                                 onClick={() => handleImport(row)}
-                                                disabled={isImporting || !stats}
+                                                disabled={
+                                                    isImporting ||
+                                                    (row.fragment_type === "macro" && !stats)
+                                                }
                                                 className="px-3 py-1.5 rounded-lg bg-[#00d9ff] hover:bg-[#00d9ff]/80 text-[#0a0e27] text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                                             >
                                                 {isImporting ? "Importing..." : "Import"}

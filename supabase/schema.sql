@@ -51,18 +51,15 @@ create policy "Public fragments are viewable by everyone"
 -- typo'd or malicious type can't silently pollute the table. Extend this
 -- list every time a new FragmentPayload variant is added on the Rust side
 -- (see src-tauri/src/fragments.rs) -- these two lists should stay in sync.
-drop policy if exists "Anyone can submit a fragment" on fragments;
-create policy "Anyone can submit a fragment"
+drop policy if exists "Authenticated users can submit their own fragment" on fragments;
+create policy "Authenticated users can submit their own fragment"
   on fragments for insert
+  to authenticated
   with check (
-    fragment_type in ('macro')
+    fragment_type in ('macro', 'clipboard_snippet')
     and char_length(name) between 1 and 100
-    -- array_length() returns NULL (not 0) for an empty array, and RLS
-    -- treats a NULL check result as "deny" (unlike a normal CHECK
-    -- constraint, where NULL is permissive). Without coalesce(), any
-    -- fragment with zero tags -- the common case for a freshly recorded
-    -- macro -- would be silently rejected by this exact clause.
     and coalesce(array_length(tags, 1), 0) <= 10
+    and submitted_by = auth.uid()
   );
 
 -- Deliberately no UPDATE or DELETE policy yet. Without real user accounts,
