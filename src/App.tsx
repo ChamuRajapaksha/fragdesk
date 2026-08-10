@@ -18,7 +18,7 @@ function App() {
       case 'dashboard':
         return <DashboardHome setActiveTab={setActiveTab} />;
       case 'clipboard':
-        return <ClipboardHistory />;
+        return <ClipboardHistory setActiveTab={setActiveTab} />;
       case 'macros':
         return <MacroManager setActiveTab={setActiveTab} />;
       case 'monitor':
