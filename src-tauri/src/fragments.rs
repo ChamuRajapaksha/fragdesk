@@ -15,12 +15,21 @@ pub const FRAGMENT_FORMAT_VERSION: u32 = 1;
 ///
 /// Adding a new fragment type means adding a variant here -- the
 /// `Fragment` wrapper below, and every export/import command built on
-/// it, stays unchanged.
+/// it, stays unchanged. IMPORTANT: also add the new variant's
+/// snake_case name to the fragment_type allow-list in the Supabase
+/// insert RLS policy (supabase/*.sql) -- these two lists have already
+/// drifted out of sync once (clipboard_snippet shipped without the SQL
+/// update, breaking every share attempt with an RLS error until fixed).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "fragment_type", content = "payload", rename_all = "snake_case")]
 pub enum FragmentPayload {
     Macro { events: Vec<MacroEvent> },
     ClipboardSnippet { content: String },
+    MonitorAlertRule {
+        metric: String,     // "cpu" | "ram"
+        comparison: String, // "above" | "below"
+        threshold: f32,
+    },
 }
 
 /// The on-disk shape of any exported fragment -- what gets written to a
