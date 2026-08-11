@@ -5,6 +5,22 @@ pub fn init_database() -> Result<Connection> {
     let db_path = get_db_path();
     let conn = Connection::open(db_path)?;
 
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS monitor_alert_rules (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            metric TEXT NOT NULL,
+            comparison TEXT NOT NULL,
+            threshold REAL NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            source TEXT,
+            created_at INTEGER NOT NULL
+        )",
+        [],
+    )?;
+
+
     // Create clipboard_history table
     conn.execute(
         "CREATE TABLE IF NOT EXISTS clipboard_history (
@@ -357,3 +373,96 @@ pub fn load_hotkey_map(conn: &Connection) -> Result<Vec<(String, String)>> {
     }
     Ok(result)
 }
+
+ 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AlertRule {
+    pub id: String,
+    pub name: String,
+    pub metric: String,
+    pub comparison: String,
+    pub threshold: f32,
+    pub enabled: bool,
+    pub source: Option<String>,
+    pub created_at: i64,
+}
+ 
+pub fn insert_alert_rule(
+    conn: &Connection,
+    id: &str,
+    name: &str,
+    metric: &str,
+    comparison: &str,
+    threshold: f32,
+    source: Option<&str>,
+) -> Result<()> {
+    let timestamp = chrono::Utc::now().timestamp();
+    conn.execute(
+        "INSERT INTO monitor_alert_rules (id, name, metric, comparison, threshold, enabled, source, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7)",
+        rusqlite::params![id, name, metric, comparison, threshold, source, timestamp],
+    )?;
+    Ok(())
+}
+ 
+pub fn get_alert_rules(conn: &Connection) -> Result<Vec<AlertRule>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, metric, comparison, threshold, enabled, source, created_at
+         FROM monitor_alert_rules ORDER BY created_at DESC",
+    )?;
+ 
+    let items = stmt.query_map([], |row| {
+        Ok(AlertRule {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            metric: row.get(2)?,
+            comparison: row.get(3)?,
+            threshold: row.get(4)?,
+            enabled: row.get::<_, i64>(5)? != 0,
+            source: row.get(6)?,
+            created_at: row.get(7)?,
+        })
+    })?;
+ 
+    let mut result = Vec::new();
+    for item in items {
+        result.push(item?);
+    }
+    Ok(result)
+}
+ 
+pub fn get_alert_rule_by_id(conn: &Connection, id: &str) -> Result<Option<AlertRule>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, metric, comparison, threshold, enabled, source, created_at
+         FROM monitor_alert_rules WHERE id = ?1",
+    )?;
+    let mut rows = stmt.query(rusqlite::params![id])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(AlertRule {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            metric: row.get(2)?,
+            comparison: row.get(3)?,
+            threshold: row.get(4)?,
+            enabled: row.get::<_, i64>(5)? != 0,
+            source: row.get(6)?,
+            created_at: row.get(7)?,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+ 
+pub fn delete_alert_rule_item(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM monitor_alert_rules WHERE id = ?1", rusqlite::params![id])?;
+    Ok(())
+}
+ 
+pub fn toggle_alert_rule_item(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE monitor_alert_rules SET enabled = NOT enabled WHERE id = ?1",
+        rusqlite::params![id],
+    )?;
+    Ok(())
+}
+ 

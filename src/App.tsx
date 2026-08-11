@@ -22,7 +22,7 @@ function App() {
       case 'macros':
         return <MacroManager setActiveTab={setActiveTab} />;
       case 'monitor':
-        return <SystemMonitor />;
+        return <SystemMonitor setActiveTab={setActiveTab} />;
       case 'fragments':
         return <FragmentLibrary />;
       case 'community':
