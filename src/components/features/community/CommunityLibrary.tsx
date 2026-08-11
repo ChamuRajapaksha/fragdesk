@@ -35,6 +35,7 @@ interface MacroPreviewStats {
 const TYPE_LABELS: Record<string, string> = {
     macro: "Macro",
     clipboard_snippet: "Clipboard Snippet",
+    monitor_alert_rule: "Alert Rule",
 };
 
 const REPORT_REASONS: { value: string; label: string }[] = [
@@ -173,6 +174,8 @@ export default function CommunityLibrary() {
                 await invoke("import_macro_json", { json: fragmentJson, source: "community" });
             } else if (row.fragment_type === "clipboard_snippet") {
                 await invoke("import_clipboard_snippet_json", { json: fragmentJson });
+            } else if (row.fragment_type === "monitor_alert_rule") {
+                await invoke("import_alert_rule_json", { json: fragmentJson });
             } else {
                 throw new Error(`Don't know how to import fragment type "${row.fragment_type}"`);
             }
@@ -611,6 +614,42 @@ export default function CommunityLibrary() {
                                                         ? String((row.payload as { content: unknown }).content)
                                                         : "(couldn't read content)"}
                                                 </p>
+                                            </div>
+                                        ) : row.fragment_type === "monitor_alert_rule" ? (
+                                            <div className="text-sm text-gray-300">
+                                                <p className="text-xs text-gray-500 mb-1">This alert rule:</p>
+                                                {(() => {
+                                                    const p = row.payload as {
+                                                        metric?: string;
+                                                        comparison?: string;
+                                                        threshold?: number;
+                                                    };
+                                                    if (
+                                                        typeof p !== "object" ||
+                                                        p === null ||
+                                                        !p.metric ||
+                                                        !p.comparison ||
+                                                        p.threshold === undefined
+                                                    ) {
+                                                        return (
+                                                            <p className="text-xs text-gray-500">
+                                                                (couldn't read rule details)
+                                                            </p>
+                                                        );
+                                                    }
+                                                    return (
+                                                        <p className="bg-[#0a0e27] border border-white/10 rounded-lg px-3 py-2 text-sm">
+                                                            Notifies when{" "}
+                                                            <span className="text-[#00d9ff]">
+                                                                {p.metric.toUpperCase()}
+                                                            </span>{" "}
+                                                            is {p.comparison}{" "}
+                                                            <span className="text-[#00d9ff]">
+                                                                {p.threshold}%
+                                                            </span>
+                                                        </p>
+                                                    );
+                                                })()}
                                             </div>
                                         ) : (
                                             <p className="text-xs text-gray-500">
