@@ -14,6 +14,11 @@ use commands::macros::{
     set_macro_tags, set_record_hotkey, start_macro_recording, stop_macro_playback,
     stop_macro_recording, HotkeyRegistry, MacroPlayback, MacroRecorder, RecordHotkeyState,
 };
+use commands::alerts::{
+    create_alert_rule, delete_alert_rule, export_alert_rule_json,
+    get_alert_rules, import_alert_rule_json, toggle_alert_rule,
+};
+
 use commands::monitor::{get_cpu_per_core, get_system_stats};
 use commands::permissions::check_recording_permission;
 use tauri::Manager;
@@ -119,6 +124,13 @@ pub fn run() {
             set_macro_tags,
             list_bundled_fragments,
             import_bundled_fragment,
+            // Alert commands
+            create_alert_rule,
+            get_alert_rules,
+            delete_alert_rule,
+            toggle_alert_rule,
+            export_alert_rule_json,
+            import_alert_rule_json,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
