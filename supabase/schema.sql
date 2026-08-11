@@ -51,12 +51,18 @@ create policy "Public fragments are viewable by everyone"
 -- typo'd or malicious type can't silently pollute the table. Extend this
 -- list every time a new FragmentPayload variant is added on the Rust side
 -- (see src-tauri/src/fragments.rs) -- these two lists should stay in sync.
+
+-- Run in Supabase SQL Editor. Adds monitor_alert_rule to the fragment_type
+-- allow-list, learning from the clipboard_snippet miss earlier -- doing
+-- this proactively alongside the Rust-side change this time, not after
+-- someone hits the RLS error.
+
 drop policy if exists "Authenticated users can submit their own fragment" on fragments;
 create policy "Authenticated users can submit their own fragment"
   on fragments for insert
   to authenticated
   with check (
-    fragment_type in ('macro', 'clipboard_snippet')
+    fragment_type in ('macro', 'clipboard_snippet', 'monitor_alert_rule')
     and char_length(name) between 1 and 100
     and coalesce(array_length(tags, 1), 0) <= 10
     and submitted_by = auth.uid()
