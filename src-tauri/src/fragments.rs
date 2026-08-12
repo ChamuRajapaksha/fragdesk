@@ -7,6 +7,18 @@ use serde::{Deserialize, Serialize};
 /// can evolve independently -- see the comment on `FragmentPayload`.
 pub const FRAGMENT_FORMAT_VERSION: u32 = 1;
 
+/// One section of the Monitor page's layout: which widget, and whether
+/// it's currently shown. Order in the containing `Vec` is the display
+/// order. Shared between local persistence (the `settings` table) and
+/// the `MonitorLayout` fragment payload -- both use this exact same
+/// shape, so there's no conversion step between "how it's stored" and
+/// "how it's shared."
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MonitorWidgetConfig {
+    pub id: String,
+    pub visible: bool,
+}
+
 /// The type-specific data a fragment carries. Tagged so a single `.json`
 /// file self-describes what kind of fragment it is -- a "Community
 /// Fragments" browser (or a starter-pack importer) can read the
@@ -17,9 +29,10 @@ pub const FRAGMENT_FORMAT_VERSION: u32 = 1;
 /// `Fragment` wrapper below, and every export/import command built on
 /// it, stays unchanged. IMPORTANT: also add the new variant's
 /// snake_case name to the fragment_type allow-list in the Supabase
-/// insert RLS policy (supabase/*.sql) -- these two lists have already
-/// drifted out of sync once (clipboard_snippet shipped without the SQL
-/// update, breaking every share attempt with an RLS error until fixed).
+/// insert RLS policy (supabase/*.sql). This has already been missed
+/// once (clipboard_snippet shipped without the SQL update, breaking
+/// every share attempt with an RLS error until fixed) -- do it
+/// proactively alongside the Rust change, not after someone hits it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "fragment_type", content = "payload", rename_all = "snake_case")]
 pub enum FragmentPayload {
@@ -30,6 +43,7 @@ pub enum FragmentPayload {
         comparison: String, // "above" | "below"
         threshold: f32,
     },
+    MonitorLayout { widgets: Vec<MonitorWidgetConfig> },
 }
 
 /// The on-disk shape of any exported fragment -- what gets written to a
