@@ -19,6 +19,11 @@ use commands::alerts::{
     get_alert_rules, import_alert_rule_json, toggle_alert_rule,
 };
 
+use commands::monitor_layout::{
+    export_monitor_layout_json, get_monitor_layout, import_monitor_layout_json,
+    set_monitor_layout,
+};
+
 use commands::monitor::{get_cpu_per_core, get_system_stats};
 use commands::permissions::check_recording_permission;
 use tauri::Manager;
@@ -131,6 +136,11 @@ pub fn run() {
             toggle_alert_rule,
             export_alert_rule_json,
             import_alert_rule_json,
+            // Monitor layout commands
+            get_monitor_layout,
+            set_monitor_layout,
+            export_monitor_layout_json,
+            import_monitor_layout_json,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
