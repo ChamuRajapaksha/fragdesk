@@ -36,6 +36,7 @@ const TYPE_LABELS: Record<string, string> = {
     macro: "Macro",
     clipboard_snippet: "Clipboard Snippet",
     monitor_alert_rule: "Alert Rule",
+    monitor_layout: "Monitor Layout",
 };
 
 const REPORT_REASONS: { value: string; label: string }[] = [
@@ -176,6 +177,8 @@ export default function CommunityLibrary() {
                 await invoke("import_clipboard_snippet_json", { json: fragmentJson });
             } else if (row.fragment_type === "monitor_alert_rule") {
                 await invoke("import_alert_rule_json", { json: fragmentJson });
+            } else if (row.fragment_type === "monitor_layout") {
+                await invoke("import_monitor_layout_json", { json: fragmentJson });
             } else {
                 throw new Error(`Don't know how to import fragment type "${row.fragment_type}"`);
             }
@@ -651,11 +654,52 @@ export default function CommunityLibrary() {
                                                     );
                                                 })()}
                                             </div>
+                                        ) : row.fragment_type === "monitor_layout" ? (
+                                            <div className="text-sm text-gray-300">
+                                                <p className="text-xs text-gray-500 mb-1">
+                                                    This layout arranges Monitor as:
+                                                </p>
+                                                {(() => {
+                                                    const p = row.payload as {
+                                                        widgets?: { id: string; visible: boolean }[];
+                                                    };
+                                                    if (!p?.widgets || !Array.isArray(p.widgets)) {
+                                                        return (
+                                                            <p className="text-xs text-gray-500">
+                                                                (couldn't read layout details)
+                                                            </p>
+                                                        );
+                                                    }
+                                                    const labels: Record<string, string> = {
+                                                        stats: "Stats Cards",
+                                                        alerts: "Alert Rules Panel",
+                                                        cpu_graph: "CPU Graph",
+                                                        ram_graph: "RAM Graph",
+                                                    };
+                                                    return (
+                                                        <ol className="bg-[#0a0e27] border border-white/10 rounded-lg px-3 py-2 text-xs space-y-1 list-decimal pl-6">
+                                                            {p.widgets.map((w) => (
+                                                                <li
+                                                                    key={w.id}
+                                                                    className={w.visible ? "" : "text-gray-600 line-through"}
+                                                                >
+                                                                    {labels[w.id] ?? w.id}
+                                                                    {!w.visible && " (hidden)"}
+                                                                </li>
+                                                            ))}
+                                                        </ol>
+                                                    );
+                                                })()}
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    Importing replaces your current Monitor layout.
+                                                </p>
+                                            </div>
                                         ) : (
                                             <p className="text-xs text-gray-500">
                                                 No preview available for this fragment type.
                                             </p>
                                         )}
+
 
                                         {row.fragment_type === "macro" && (
                                             <p className="text-xs text-[#ff3366]">
