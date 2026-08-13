@@ -62,7 +62,7 @@ create policy "Authenticated users can submit their own fragment"
   on fragments for insert
   to authenticated
   with check (
-    fragment_type in ('macro', 'clipboard_snippet', 'monitor_alert_rule')
+    fragment_type in ('macro', 'clipboard_snippet', 'monitor_alert_rule', 'monitor_layout')
     and char_length(name) between 1 and 100
     and coalesce(array_length(tags, 1), 0) <= 10
     and submitted_by = auth.uid()

@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { motion } from 'framer-motion';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { Cpu, MemoryStick, Activity, Bell, X } from 'lucide-react';
+import { Cpu, MemoryStick, Activity, Bell, X, LayoutGrid, ArrowUp, ArrowDown, Eye, EyeOff } from 'lucide-react';
 import { extractErrorMessage, isSupabaseConfigured, supabase } from '../../../community/supabaseClient';
 import { useAuth } from '../../../community/useAuth';
+import type { ReactNode } from 'react';
 
 interface SystemMonitorProps {
   setActiveTab: (tab: string) => void;
@@ -40,6 +41,18 @@ interface FiredAlert {
   message: string;
 }
 
+interface WidgetConfig {
+  id: string;
+  visible: boolean;
+}
+
+const WIDGET_LABELS: Record<string, string> = {
+  stats: 'Stats Cards (CPU, RAM, Status)',
+  alerts: 'Alert Rules Panel',
+  cpu_graph: 'CPU Usage Graph',
+  ram_graph: 'RAM Usage Graph',
+};
+
 export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   const { user } = useAuth();
   const [stats, setStats] = useState<SystemStats | null>(null);
@@ -57,19 +70,19 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   const [sharingRuleId, setSharingRuleId] = useState<string | null>(null);
   const [sharedRuleIds, setSharedRuleIds] = useState<Set<string>>(new Set());
 
-  // Tracks which rules are CURRENTLY in a triggered state, so alerts fire
-  // once on the crossing (edge-triggered) rather than every single poll
-  // tick while the condition remains true.
+  const [layout, setLayout] = useState<WidgetConfig[]>([]);
+  const [showCustomize, setShowCustomize] = useState(false);
+  const [sharingLayout, setSharingLayout] = useState(false);
+  const [layoutShared, setLayoutShared] = useState(false);
+  const [layoutNameDraft, setLayoutNameDraft] = useState('');
+
   const triggeredRef = useRef<Set<string>>(new Set());
-  // rules is read inside a setInterval-driven callback (loadStats ->
-  // evaluateRules), so it needs a ref too -- otherwise evaluateRules
-  // would keep closing over whatever `rules` was on the render where the
-  // interval was created (empty, since it's set up in the mount effect).
   const rulesRef = useRef<AlertRule[]>([]);
 
   useEffect(() => {
     loadStats();
     loadRules();
+    loadLayout();
 
     setIsMonitoring(true);
     const interval = setInterval(() => {
@@ -94,6 +107,99 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       console.error('Failed to load alert rules:', err);
     }
   };
+
+  const loadLayout = async () => {
+    try {
+      const result = await invoke<WidgetConfig[]>('get_monitor_layout');
+      setLayout(result);
+    } catch (err) {
+      console.error('Failed to load monitor layout:', err);
+    }
+  };
+
+  async function persistLayout(newLayout: WidgetConfig[]) {
+    setLayout(newLayout);
+    try {
+      const applied = await invoke<WidgetConfig[]>('set_monitor_layout', { widgets: newLayout });
+      setLayout(applied);
+    } catch (err) {
+      setError(extractErrorMessage(err));
+      await loadLayout();
+    }
+  }
+
+  function moveWidget(id: string, direction: -1 | 1) {
+    const idx = layout.findIndex((w) => w.id === id);
+    const swapWith = idx + direction;
+    if (idx === -1 || swapWith < 0 || swapWith >= layout.length) return;
+    const next = [...layout];
+    [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
+    void persistLayout(next);
+  }
+
+  function toggleWidgetVisibility(id: string) {
+    const next = layout.map((w) => (w.id === id ? { ...w, visible: !w.visible } : w));
+    void persistLayout(next);
+  }
+
+  async function resetLayout() {
+    try {
+      const defaults: WidgetConfig[] = [
+        { id: 'stats', visible: true },
+        { id: 'alerts', visible: true },
+        { id: 'cpu_graph', visible: true },
+        { id: 'ram_graph', visible: true },
+      ];
+      const applied = await invoke<WidgetConfig[]>('set_monitor_layout', { widgets: defaults });
+      setLayout(applied);
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    }
+  }
+
+  async function handleShareLayout() {
+    if (!isSupabaseConfigured) {
+      setError("Community sharing isn't set up yet — add Supabase credentials to .env first.");
+      return;
+    }
+    if (!user) {
+      setActiveTab('community');
+      return;
+    }
+    if (!supabase) return;
+    const name = layoutNameDraft.trim();
+    if (!name) return;
+
+    setSharingLayout(true);
+    setError(null);
+    try {
+      const json = await invoke<string>('export_monitor_layout_json', { name });
+      const fragment = JSON.parse(json) as {
+        fragment_type: string;
+        name: string;
+        tags: string[];
+        format_version: number;
+        payload: unknown;
+      };
+
+      const { error: insertError } = await supabase.from('fragments').insert({
+        fragment_type: fragment.fragment_type,
+        name: fragment.name,
+        tags: fragment.tags,
+        format_version: fragment.format_version,
+        payload: fragment.payload,
+        submitted_by: user.id,
+      });
+
+      if (insertError) throw insertError;
+      setLayoutShared(true);
+      setLayoutNameDraft('');
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setSharingLayout(false);
+    }
+  }
 
   function evaluateRules(currentStats: SystemStats) {
     const values: Record<'cpu' | 'ram', number> = {
@@ -251,44 +357,9 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     );
   }
 
-  return (
-    <div className="max-w-6xl">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-frag-text mb-2">System Monitor</h1>
-        <p className="text-frag-muted">
-          {isMonitoring ? '🟢 Real-time system performance monitoring' : 'Monitoring paused'}
-        </p>
-      </div>
-
-      {/* Fired alert banners */}
-      {firedAlerts.length > 0 && (
-        <div className="space-y-2 mb-6">
-          {firedAlerts.map((alert, i) => (
-            <div
-              key={`${alert.ruleId}-${i}`}
-              className="flex items-center justify-between bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-3"
-            >
-              <span className="flex items-center gap-2">
-                <Bell size={16} />
-                {alert.message}
-              </span>
-              <button onClick={() => dismissAlert(alert.ruleId)} className="hover:text-white">
-                <X size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {error && (
-        <div className="mb-4 bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2">
-          {error}
-        </div>
-      )}
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+  const widgetContent: Record<string, ReactNode> = {
+    stats: (
+      <div className="grid grid-cols-3 gap-4">
         <motion.div
           className="bg-frag-surface border border-frag-border rounded-lg p-6"
           whileHover={{ y: -4 }}
@@ -306,9 +377,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
             </div>
           </div>
           <div className="flex items-end gap-2">
-            <p className="text-4xl font-bold text-frag-primary">
-              {stats.cpu_usage.toFixed(1)}
-            </p>
+            <p className="text-4xl font-bold text-frag-primary">{stats.cpu_usage.toFixed(1)}</p>
             <p className="text-frag-muted text-xl mb-1">%</p>
           </div>
           <div className="mt-4 h-2 bg-frag-bg rounded-full overflow-hidden">
@@ -340,9 +409,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
             </div>
           </div>
           <div className="flex items-end gap-2">
-            <p className="text-4xl font-bold text-frag-accent">
-              {stats.ram_percent.toFixed(1)}
-            </p>
+            <p className="text-4xl font-bold text-frag-accent">{stats.ram_percent.toFixed(1)}</p>
             <p className="text-frag-muted text-xl mb-1">%</p>
           </div>
           <div className="mt-4 h-2 bg-frag-bg rounded-full overflow-hidden">
@@ -377,15 +444,14 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
             </p>
           </div>
           <div className="mt-4">
-            <p className="text-xs text-frag-muted">
-              {history.length} data points collected
-            </p>
+            <p className="text-xs text-frag-muted">{history.length} data points collected</p>
           </div>
         </motion.div>
       </div>
+    ),
 
-      {/* Alert Rules */}
-      <div className="bg-frag-surface border border-frag-border rounded-lg p-6 mb-4">
+    alerts: (
+      <div className="bg-frag-surface border border-frag-border rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-frag-text flex items-center gap-2">
             <Bell className="text-frag-primary" size={20} />
@@ -445,10 +511,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                 className="bg-frag-bg border border-frag-border rounded-lg px-3 py-1.5 text-sm text-frag-text w-24"
               />
             </div>
-            <button
-              type="submit"
-              className="px-4 py-1.5 rounded-lg bg-frag-success text-frag-bg text-sm font-semibold"
-            >
+            <button type="submit" className="px-4 py-1.5 rounded-lg bg-frag-success text-frag-bg text-sm font-semibold">
               Create
             </button>
           </form>
@@ -459,30 +522,19 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         ) : (
           <div className="space-y-2">
             {rules.map((rule) => (
-              <div
-                key={rule.id}
-                className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-4 py-2.5"
-              >
+              <div key={rule.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-4 py-2.5">
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => handleToggleRule(rule.id)}
-                    className={`w-9 h-5 rounded-full transition-colors relative ${
-                      rule.enabled ? 'bg-frag-success' : 'bg-frag-border'
-                    }`}
+                    className={`w-9 h-5 rounded-full transition-colors relative ${rule.enabled ? 'bg-frag-success' : 'bg-frag-border'}`}
                   >
-                    <span
-                      className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                        rule.enabled ? 'translate-x-4' : 'translate-x-0.5'
-                      }`}
-                    />
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${rule.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                   </button>
                   <div>
                     <p className="text-sm text-frag-text font-medium">{rule.name}</p>
                     <p className="text-xs text-frag-muted">
                       {rule.metric.toUpperCase()} {rule.comparison} {rule.threshold}%
-                      {rule.source === 'community' && (
-                        <span className="ml-2 text-frag-accent">from community</span>
-                      )}
+                      {rule.source === 'community' && <span className="ml-2 text-frag-accent">from community</span>}
                     </p>
                   </div>
                 </div>
@@ -510,9 +562,10 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
           </div>
         )}
       </div>
+    ),
 
-      {/* CPU Graph */}
-      <div className="bg-frag-surface border border-frag-border rounded-lg p-6 mb-4">
+    cpu_graph: (
+      <div className="bg-frag-surface border border-frag-border rounded-lg p-6">
         <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
           <Cpu className="text-frag-primary" size={20} />
           CPU Usage Over Time
@@ -521,43 +574,21 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
           <AreaChart data={history}>
             <defs>
               <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#00d9ff" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="#00d9ff" stopOpacity={0}/>
+                <stop offset="5%" stopColor="#00d9ff" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#00d9ff" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-            <XAxis
-              dataKey="time"
-              stroke="#71717a"
-              tick={{ fill: '#71717a' }}
-              tickLine={{ stroke: '#71717a' }}
-            />
-            <YAxis
-              stroke="#71717a"
-              tick={{ fill: '#71717a' }}
-              tickLine={{ stroke: '#71717a' }}
-              domain={[0, 100]}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#141933',
-                border: '1px solid #1e293b',
-                borderRadius: '8px',
-                color: '#e4e4e7'
-              }}
-            />
-            <Area
-              type="monotone"
-              dataKey="cpu"
-              stroke="#00d9ff"
-              strokeWidth={2}
-              fill="url(#cpuGradient)"
-            />
+            <XAxis dataKey="time" stroke="#71717a" tick={{ fill: '#71717a' }} tickLine={{ stroke: '#71717a' }} />
+            <YAxis stroke="#71717a" tick={{ fill: '#71717a' }} tickLine={{ stroke: '#71717a' }} domain={[0, 100]} />
+            <Tooltip contentStyle={{ backgroundColor: '#141933', border: '1px solid #1e293b', borderRadius: '8px', color: '#e4e4e7' }} />
+            <Area type="monotone" dataKey="cpu" stroke="#00d9ff" strokeWidth={2} fill="url(#cpuGradient)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>
+    ),
 
-      {/* RAM Graph */}
+    ram_graph: (
       <div className="bg-frag-surface border border-frag-border rounded-lg p-6">
         <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
           <MemoryStick className="text-frag-accent" size={20} />
@@ -567,40 +598,117 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
           <AreaChart data={history}>
             <defs>
               <linearGradient id="ramGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#b026ff" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="#b026ff" stopOpacity={0}/>
+                <stop offset="5%" stopColor="#b026ff" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#b026ff" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-            <XAxis
-              dataKey="time"
-              stroke="#71717a"
-              tick={{ fill: '#71717a' }}
-              tickLine={{ stroke: '#71717a' }}
-            />
-            <YAxis
-              stroke="#71717a"
-              tick={{ fill: '#71717a' }}
-              tickLine={{ stroke: '#71717a' }}
-              domain={[0, 100]}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#141933',
-                border: '1px solid #1e293b',
-                borderRadius: '8px',
-                color: '#e4e4e7'
-              }}
-            />
-            <Area
-              type="monotone"
-              dataKey="ram"
-              stroke="#b026ff"
-              strokeWidth={2}
-              fill="url(#ramGradient)"
-            />
+            <XAxis dataKey="time" stroke="#71717a" tick={{ fill: '#71717a' }} tickLine={{ stroke: '#71717a' }} />
+            <YAxis stroke="#71717a" tick={{ fill: '#71717a' }} tickLine={{ stroke: '#71717a' }} domain={[0, 100]} />
+            <Tooltip contentStyle={{ backgroundColor: '#141933', border: '1px solid #1e293b', borderRadius: '8px', color: '#e4e4e7' }} />
+            <Area type="monotone" dataKey="ram" stroke="#b026ff" strokeWidth={2} fill="url(#ramGradient)" />
           </AreaChart>
         </ResponsiveContainer>
+      </div>
+    ),
+  };
+
+  return (
+    <div className="max-w-6xl">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-3xl font-bold text-frag-text mb-2">System Monitor</h1>
+          <p className="text-frag-muted">
+            {isMonitoring ? '🟢 Real-time system performance monitoring' : 'Monitoring paused'}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowCustomize((v) => !v)}
+          className="px-3 py-2 rounded-lg bg-frag-surface border border-frag-border text-frag-muted hover:text-frag-text flex items-center gap-2 text-sm"
+        >
+          <LayoutGrid size={16} />
+          Customize Layout
+        </button>
+      </div>
+
+      {showCustomize && (
+        <div className="bg-frag-surface border border-frag-border rounded-lg p-4 mb-6 space-y-2">
+          {layout.map((w, i) => (
+            <div key={w.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-3 py-2">
+              <span className={`text-sm ${w.visible ? 'text-frag-text' : 'text-frag-muted line-through'}`}>
+                {WIDGET_LABELS[w.id] ?? w.id}
+              </span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => moveWidget(w.id, -1)} disabled={i === 0} className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted">
+                  <ArrowUp size={14} />
+                </button>
+                <button onClick={() => moveWidget(w.id, 1)} disabled={i === layout.length - 1} className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted">
+                  <ArrowDown size={14} />
+                </button>
+                <button onClick={() => toggleWidgetVisibility(w.id)} className="p-1.5 rounded hover:bg-frag-surface text-frag-muted">
+                  {w.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                </button>
+              </div>
+            </div>
+          ))}
+          <div className="flex items-center justify-between pt-2 border-t border-frag-border">
+            <button onClick={resetLayout} className="text-xs text-frag-muted hover:text-frag-text">
+              Reset to default
+            </button>
+            <div className="flex items-center gap-2">
+              {layoutShared ? (
+                <span className="text-xs text-frag-success">Shared ✓</span>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    value={layoutNameDraft}
+                    onChange={(e) => setLayoutNameDraft(e.target.value)}
+                    placeholder="Name this layout..."
+                    className="bg-frag-bg border border-frag-border rounded-lg px-2 py-1 text-xs text-frag-text w-40"
+                  />
+                  <button
+                    onClick={handleShareLayout}
+                    disabled={sharingLayout || !layoutNameDraft.trim()}
+                    className="text-xs px-2 py-1 rounded-lg bg-frag-primary text-frag-bg font-medium disabled:opacity-40"
+                  >
+                    {sharingLayout ? '...' : 'Share layout'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {firedAlerts.length > 0 && (
+        <div className="space-y-2 mb-6">
+          {firedAlerts.map((alert, i) => (
+            <div key={`${alert.ruleId}-${i}`} className="flex items-center justify-between bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-3">
+              <span className="flex items-center gap-2">
+                <Bell size={16} />
+                {alert.message}
+              </span>
+              <button onClick={() => dismissAlert(alert.ruleId)} className="hover:text-white">
+                <X size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-4 bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2">
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {layout
+          .filter((w) => w.visible)
+          .map((w) => (
+            <div key={w.id}>{widgetContent[w.id]}</div>
+          ))}
       </div>
     </div>
   );
