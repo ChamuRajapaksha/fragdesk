@@ -24,6 +24,8 @@ use commands::monitor_layout::{
     set_monitor_layout,
 };
 
+use commands::onboarding::{has_completed_onboarding, mark_onboarding_completed};
+
 use commands::monitor::{get_cpu_per_core, get_system_stats};
 use commands::permissions::check_recording_permission;
 use tauri::Manager;
@@ -141,6 +143,9 @@ pub fn run() {
             set_monitor_layout,
             export_monitor_layout_json,
             import_monitor_layout_json,
+            // Onboarding commands
+            has_completed_onboarding,
+            mark_onboarding_completed,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

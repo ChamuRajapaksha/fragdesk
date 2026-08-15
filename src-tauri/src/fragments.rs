@@ -65,3 +65,146 @@ pub struct Fragment {
     #[serde(flatten)]
     pub payload: FragmentPayload,
 }
+
+// Note: these tests deliberately don't rely on #[derive(PartialEq)] for
+// Fragment/FragmentPayload/MacroEvent (none of them currently derive it,
+// and adding it would mean touching database/mod.rs too) -- instead they
+// pattern-match on the deserialized result and assert individual fields.
+ 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::MacroEvent;
+ 
+    fn sample_fragment(payload: FragmentPayload) -> Fragment {
+        Fragment {
+            format_version: FRAGMENT_FORMAT_VERSION,
+            name: "Test Fragment".to_string(),
+            tags: vec!["tag1".to_string(), "tag2".to_string()],
+            exported_at: 1_700_000_000,
+            payload,
+        }
+    }
+ 
+    #[test]
+    fn macro_fragment_round_trips() {
+        let original = sample_fragment(FragmentPayload::Macro {
+            events: vec![
+                MacroEvent::KeyDown { key: "KeyA".to_string(), delay_ms: 0 },
+                MacroEvent::KeyUp { key: "KeyA".to_string(), delay_ms: 50 },
+            ],
+        });
+ 
+        let json = serde_json::to_string(&original).expect("serialize");
+        let restored: Fragment = serde_json::from_str(&json).expect("deserialize");
+ 
+        assert_eq!(restored.name, "Test Fragment");
+        assert_eq!(restored.tags, vec!["tag1", "tag2"]);
+        assert_eq!(restored.format_version, FRAGMENT_FORMAT_VERSION);
+ 
+        match restored.payload {
+            FragmentPayload::Macro { events } => {
+                assert_eq!(events.len(), 2);
+                match &events[0] {
+                    MacroEvent::KeyDown { key, delay_ms } => {
+                        assert_eq!(key, "KeyA");
+                        assert_eq!(*delay_ms, 0);
+                    }
+                    other => panic!("expected KeyDown, got {other:?}"),
+                }
+            }
+            other => panic!("expected Macro payload, got {other:?}"),
+        }
+    }
+ 
+    #[test]
+    fn clipboard_snippet_fragment_round_trips() {
+        let original = sample_fragment(FragmentPayload::ClipboardSnippet {
+            content: "gg wp".to_string(),
+        });
+ 
+        let json = serde_json::to_string(&original).expect("serialize");
+        let restored: Fragment = serde_json::from_str(&json).expect("deserialize");
+ 
+        match restored.payload {
+            FragmentPayload::ClipboardSnippet { content } => assert_eq!(content, "gg wp"),
+            other => panic!("expected ClipboardSnippet payload, got {other:?}"),
+        }
+    }
+ 
+    #[test]
+    fn monitor_alert_rule_fragment_round_trips() {
+        let original = sample_fragment(FragmentPayload::MonitorAlertRule {
+            metric: "cpu".to_string(),
+            comparison: "above".to_string(),
+            threshold: 90.5,
+        });
+ 
+        let json = serde_json::to_string(&original).expect("serialize");
+        let restored: Fragment = serde_json::from_str(&json).expect("deserialize");
+ 
+        match restored.payload {
+            FragmentPayload::MonitorAlertRule { metric, comparison, threshold } => {
+                assert_eq!(metric, "cpu");
+                assert_eq!(comparison, "above");
+                assert!((threshold - 90.5).abs() < f32::EPSILON);
+            }
+            other => panic!("expected MonitorAlertRule payload, got {other:?}"),
+        }
+    }
+ 
+    #[test]
+    fn monitor_layout_fragment_round_trips() {
+        let original = sample_fragment(FragmentPayload::MonitorLayout {
+            widgets: vec![
+                MonitorWidgetConfig { id: "stats".to_string(), visible: true },
+                MonitorWidgetConfig { id: "alerts".to_string(), visible: false },
+            ],
+        });
+ 
+        let json = serde_json::to_string(&original).expect("serialize");
+        let restored: Fragment = serde_json::from_str(&json).expect("deserialize");
+ 
+        match restored.payload {
+            FragmentPayload::MonitorLayout { widgets } => {
+                assert_eq!(widgets.len(), 2);
+                assert_eq!(widgets[0], MonitorWidgetConfig { id: "stats".to_string(), visible: true });
+                assert_eq!(widgets[1], MonitorWidgetConfig { id: "alerts".to_string(), visible: false });
+            }
+            other => panic!("expected MonitorLayout payload, got {other:?}"),
+        }
+    }
+ 
+    #[test]
+    fn serialized_json_has_the_expected_tagged_shape() {
+        // Confirms the on-disk shape itself, not just that round-tripping
+        // works -- this is what actually gets written to a shared .json
+        // file, so its exact structure matters (fragment_type/payload
+        // wrapping, not flat fields).
+        let fragment = sample_fragment(FragmentPayload::ClipboardSnippet {
+            content: "hello".to_string(),
+        });
+        let json = serde_json::to_string(&fragment).expect("serialize");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("parse as Value");
+ 
+        assert_eq!(value["fragment_type"], "clipboard_snippet");
+        assert_eq!(value["payload"]["content"], "hello");
+        assert_eq!(value["name"], "Test Fragment");
+        assert_eq!(value["format_version"], FRAGMENT_FORMAT_VERSION);
+    }
+ 
+    #[test]
+    fn unknown_fragment_type_fails_to_deserialize() {
+        let bad_json = r#"{
+            "format_version": 1,
+            "name": "Bad Fragment",
+            "tags": [],
+            "exported_at": 0,
+            "fragment_type": "something_made_up",
+            "payload": {}
+        }"#;
+ 
+        let result: Result<Fragment, _> = serde_json::from_str(bad_json);
+        assert!(result.is_err(), "an unrecognized fragment_type should fail to parse, not silently succeed");
+    }
+}

@@ -901,3 +901,97 @@ fn to_sim_event(event: &MacroEvent) -> Option<EventType> {
         }),
     }
 }
+
+#[cfg(test)]
+mod key_parsing_tests {
+    use super::*;
+ 
+    #[test]
+    fn parse_key_handles_letter_keys() {
+        assert!(matches!(parse_key("KeyA"), Some(Key::KeyA)));
+        assert!(matches!(parse_key("KeyZ"), Some(Key::KeyZ)));
+    }
+ 
+    #[test]
+    fn parse_key_handles_number_keys() {
+        assert!(matches!(parse_key("Num0"), Some(Key::Num0)));
+        assert!(matches!(parse_key("Num9"), Some(Key::Num9)));
+    }
+ 
+    #[test]
+    fn parse_key_handles_function_keys() {
+        assert!(matches!(parse_key("F1"), Some(Key::F1)));
+        assert!(matches!(parse_key("F12"), Some(Key::F12)));
+    }
+ 
+    #[test]
+    fn parse_key_handles_modifier_and_special_keys() {
+        assert!(matches!(parse_key("ControlLeft"), Some(Key::ControlLeft)));
+        assert!(matches!(parse_key("ShiftRight"), Some(Key::ShiftRight)));
+        assert!(matches!(parse_key("Return"), Some(Key::Return)));
+        assert!(matches!(parse_key("Escape"), Some(Key::Escape)));
+        assert!(matches!(parse_key("Space"), Some(Key::Space)));
+    }
+ 
+    #[test]
+    fn parse_key_handles_keypad_keys() {
+        assert!(matches!(parse_key("Kp5"), Some(Key::Kp5)));
+        assert!(matches!(parse_key("KpReturn"), Some(Key::KpReturn)));
+    }
+ 
+    #[test]
+    fn parse_key_round_trips_unknown_variant() {
+        // This is the fallback path for platform-specific key codes rdev
+        // doesn't have a named variant for -- confirms the "Unknown(123)"
+        // debug-string format (produced when recording, via
+        // format!("{:?}", key)) parses back to the same numeric code.
+        match parse_key("Unknown(42)") {
+            Some(Key::Unknown(code)) => assert_eq!(code, 42),
+            other => panic!("expected Unknown(42), got {other:?}"),
+        }
+    }
+ 
+    #[test]
+    fn parse_key_rejects_garbage_input() {
+        assert!(parse_key("NotARealKey").is_none());
+        assert!(parse_key("").is_none());
+        assert!(parse_key("Unknown(not_a_number)").is_none());
+    }
+ 
+    #[test]
+    fn parse_button_handles_named_buttons() {
+        assert!(matches!(parse_button("Left"), Some(Button::Left)));
+        assert!(matches!(parse_button("Right"), Some(Button::Right)));
+        assert!(matches!(parse_button("Middle"), Some(Button::Middle)));
+    }
+ 
+    #[test]
+    fn parse_button_round_trips_unknown_variant() {
+        match parse_button("Unknown(7)") {
+            Some(Button::Unknown(code)) => assert_eq!(code, 7),
+            other => panic!("expected Unknown(7), got {other:?}"),
+        }
+    }
+ 
+    #[test]
+    fn parse_button_rejects_garbage_input() {
+        assert!(parse_button("NotARealButton").is_none());
+        assert!(parse_button("").is_none());
+    }
+ 
+    #[test]
+    fn key_and_button_debug_format_round_trips_for_common_cases() {
+        // The recorder stores keys/buttons via format!("{:?}", key) and
+        // playback parses that same string back via parse_key/
+        // parse_button -- this confirms that round-trip actually holds
+        // for rdev's own Debug output, not just our hardcoded string
+        // literals above.
+        let key = Key::KeyQ;
+        let debug_str = format!("{:?}", key);
+        assert!(matches!(parse_key(&debug_str), Some(Key::KeyQ)));
+ 
+        let button = Button::Left;
+        let debug_str = format!("{:?}", button);
+        assert!(matches!(parse_button(&debug_str), Some(Button::Left)));
+    }
+}

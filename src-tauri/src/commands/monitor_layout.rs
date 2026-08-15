@@ -109,3 +109,93 @@ pub fn import_monitor_layout_json(json: String) -> Result<Vec<MonitorWidgetConfi
 
     set_monitor_layout(widgets)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+ 
+    fn widget(id: &str, visible: bool) -> MonitorWidgetConfig {
+        MonitorWidgetConfig {
+            id: id.to_string(),
+            visible,
+        }
+    }
+ 
+    #[test]
+    fn default_layout_has_all_known_widgets_visible() {
+        let layout = default_layout();
+        assert_eq!(layout.len(), KNOWN_WIDGET_IDS.len());
+        assert!(layout.iter().all(|w| w.visible));
+        for id in KNOWN_WIDGET_IDS {
+            assert!(layout.iter().any(|w| w.id == id));
+        }
+    }
+ 
+    #[test]
+    fn normalize_preserves_a_valid_full_layout_unchanged() {
+        let input = vec![
+            widget("ram_graph", false),
+            widget("stats", true),
+            widget("alerts", true),
+            widget("cpu_graph", true),
+        ];
+        let result = normalize_layout(input.clone());
+        assert_eq!(result, input);
+    }
+ 
+    #[test]
+    fn normalize_drops_unknown_widget_ids() {
+        // A fragment from a newer app version might reference a widget
+        // this build doesn't know about -- it should be silently
+        // dropped, not cause an error.
+        let input = vec![
+            widget("stats", true),
+            widget("some_future_widget", true),
+            widget("alerts", true),
+            widget("cpu_graph", true),
+            widget("ram_graph", true),
+        ];
+        let result = normalize_layout(input);
+        assert!(!result.iter().any(|w| w.id == "some_future_widget"));
+        assert_eq!(result.len(), KNOWN_WIDGET_IDS.len());
+    }
+ 
+    #[test]
+    fn normalize_appends_missing_known_widgets_as_visible() {
+        // A fragment from an older app version might predate a widget
+        // that's since been added -- it should show up (visible), not
+        // silently vanish for the importer.
+        let input = vec![widget("stats", true), widget("alerts", false)];
+        let result = normalize_layout(input);
+ 
+        assert_eq!(result.len(), KNOWN_WIDGET_IDS.len());
+        assert!(result.iter().any(|w| w.id == "cpu_graph" && w.visible));
+        assert!(result.iter().any(|w| w.id == "ram_graph" && w.visible));
+        // Existing entries' visibility is preserved, not reset.
+        assert!(result.iter().any(|w| w.id == "alerts" && !w.visible));
+    }
+ 
+    #[test]
+    fn normalize_drops_duplicate_ids_keeping_first_occurrence() {
+        let input = vec![
+            widget("stats", true),
+            widget("stats", false), // duplicate, should be dropped
+            widget("alerts", true),
+            widget("cpu_graph", true),
+            widget("ram_graph", true),
+        ];
+        let result = normalize_layout(input);
+ 
+        let stats_entries: Vec<_> = result.iter().filter(|w| w.id == "stats").collect();
+        assert_eq!(stats_entries.len(), 1);
+        assert!(stats_entries[0].visible); // kept the FIRST occurrence (visible: true)
+    }
+ 
+    #[test]
+    fn normalize_handles_completely_empty_input() {
+        let result = normalize_layout(vec![]);
+        assert_eq!(result.len(), KNOWN_WIDGET_IDS.len());
+        assert!(result.iter().all(|w| w.visible));
+    }
+}

@@ -8,7 +8,7 @@ on:
 
 jobs:
   rust-check:
-    name: Rust (cargo check)
+    name: Rust (cargo check + test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +48,10 @@ jobs:
       - name: cargo check
         working-directory: src-tauri
         run: cargo check --all-targets
+
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test
 
   frontend-build:
     name: Frontend (npm build)

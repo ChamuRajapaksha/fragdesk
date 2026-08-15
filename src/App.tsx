@@ -9,6 +9,7 @@ import FragmentLibrary from './components/features/fragments/FragmentLibrary';
 import CommunityLibrary from './components/features/community/CommunityLibrary';
 import CommandPalette from './components/features/command/CommandPalette';
 import SettingsPage from './components/features/settings/SettingsPage';
+import OnboardingTour from './components/features/onboarding/OnboardingTour';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -40,6 +41,7 @@ function App() {
         {renderContent()}
       </MainLayout>
       <CommandPalette setActiveTab={setActiveTab} />
+      <OnboardingTour />
     </>
   );
 }
