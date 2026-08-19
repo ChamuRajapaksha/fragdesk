@@ -95,7 +95,7 @@ pub fn get_fps_stats(state: tauri::State<'_, FpsMonitorState>) -> Result<Option<
     if state.target_pid.lock().unwrap().is_none() {
         return Ok(None);
     }
-    let samples = state.samples.lock().unwrap();
+    let mut samples = state.samples.lock().unwrap();
     Ok(calculate_fps_stats(samples.make_contiguous()))
 }
 
