@@ -1,6 +1,7 @@
 mod database;
 mod commands;
 mod fragments;
+mod rtss;
 
 use commands::clipboard::{
     copy_to_clipboard, delete_clipboard, get_clipboard_items, get_current_clipboard,
@@ -25,6 +26,10 @@ use commands::monitor_layout::{
 };
 
 use commands::onboarding::{has_completed_onboarding, mark_onboarding_completed};
+
+use commands::fps::{
+    get_fps_stats, list_rtss_apps, set_fps_tracking_target, FpsMonitorState,
+};
 
 use commands::monitor::{get_cpu_per_core, get_system_stats};
 use commands::permissions::check_recording_permission;
@@ -55,6 +60,7 @@ pub fn run() {
         .manage(MacroRecorder::new())
         .manage(MacroPlayback::new())
         .manage(HotkeyRegistry::new())
+        .manage(FpsMonitorState::new())
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -146,6 +152,10 @@ pub fn run() {
             // Onboarding commands
             has_completed_onboarding,
             mark_onboarding_completed,
+            // FPS commands
+            get_fps_stats,
+            list_rtss_apps,
+            set_fps_tracking_target,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
