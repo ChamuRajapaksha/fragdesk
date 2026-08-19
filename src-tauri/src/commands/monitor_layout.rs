@@ -139,6 +139,7 @@ mod tests {
             widget("stats", true),
             widget("alerts", true),
             widget("cpu_graph", true),
+            widget("fps", true),
         ];
         let result = normalize_layout(input.clone());
         assert_eq!(result, input);
