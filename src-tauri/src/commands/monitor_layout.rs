@@ -8,7 +8,7 @@ const SETTING_KEY: &str = "monitor_layout";
 /// -- both when a user reorders things locally, and when an imported
 /// community fragment might reference widgets from a version of the app
 /// (older or newer) that doesn't quite match this one.
-const KNOWN_WIDGET_IDS: [&str; 4] = ["stats", "alerts", "cpu_graph", "ram_graph"];
+const KNOWN_WIDGET_IDS: [&str; 5] = ["stats", "alerts", "cpu_graph", "ram_graph", "fps"];
 
 fn default_layout() -> Vec<MonitorWidgetConfig> {
     KNOWN_WIDGET_IDS
@@ -139,6 +139,7 @@ mod tests {
             widget("stats", true),
             widget("alerts", true),
             widget("cpu_graph", true),
+            widget("fps", true),
         ];
         let result = normalize_layout(input.clone());
         assert_eq!(result, input);
