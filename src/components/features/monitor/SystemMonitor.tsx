@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { motion } from 'framer-motion';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { Cpu, MemoryStick, Activity, Bell, X, LayoutGrid, ArrowUp, ArrowDown, Eye, EyeOff } from 'lucide-react';
+import { Cpu, MemoryStick, Activity, Bell, X, LayoutGrid, ArrowUp, ArrowDown, Eye, EyeOff, Gauge } from 'lucide-react';
 import { extractErrorMessage, isSupabaseConfigured, supabase } from '../../../community/supabaseClient';
 import { useAuth } from '../../../community/useAuth';
-import type { ReactNode } from 'react';
 
 interface SystemMonitorProps {
   setActiveTab: (tab: string) => void;
@@ -46,11 +45,24 @@ interface WidgetConfig {
   visible: boolean;
 }
 
+interface RtssAppSummary {
+  process_id: number;
+  name: string;
+}
+
+interface FpsStats {
+  current_fps: number;
+  avg_fps: number;
+  one_percent_low_fps: number;
+  sample_count: number;
+}
+
 const WIDGET_LABELS: Record<string, string> = {
   stats: 'Stats Cards (CPU, RAM, Status)',
   alerts: 'Alert Rules Panel',
   cpu_graph: 'CPU Usage Graph',
   ram_graph: 'RAM Usage Graph',
+  fps: 'FPS / 1% Lows (via RTSS)',
 };
 
 export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
@@ -76,6 +88,15 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   const [layoutShared, setLayoutShared] = useState(false);
   const [layoutNameDraft, setLayoutNameDraft] = useState('');
 
+  // FPS / 1% lows tracking
+  const [rtssApps, setRtssApps] = useState<RtssAppSummary[]>([]);
+  const [rtssError, setRtssError] = useState<string | null>(null);
+  const [selectedPid, setSelectedPid] = useState<number | null>(null);
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [fpsStats, setFpsStats] = useState<FpsStats | null>(null);
+  const [showAppPicker, setShowAppPicker] = useState(false);
+  const [loadingApps, setLoadingApps] = useState(false);
+
   const triggeredRef = useRef<Set<string>>(new Set());
   const rulesRef = useRef<AlertRule[]>([]);
 
@@ -87,6 +108,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     setIsMonitoring(true);
     const interval = setInterval(() => {
       loadStats();
+      loadFpsStats();
     }, 1000);
 
     return () => {
@@ -116,6 +138,57 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       console.error('Failed to load monitor layout:', err);
     }
   };
+
+  async function loadFpsStats() {
+    try {
+      const stats = await invoke<FpsStats | null>('get_fps_stats');
+      setFpsStats(stats);
+    } catch (err) {
+      console.error('Failed to load FPS stats:', err);
+    }
+  }
+
+  async function refreshRtssApps() {
+    setLoadingApps(true);
+    setRtssError(null);
+    try {
+      const apps = await invoke<RtssAppSummary[]>('list_rtss_apps');
+      setRtssApps(apps);
+    } catch (err) {
+      setRtssError(extractErrorMessage(err));
+      setRtssApps([]);
+    } finally {
+      setLoadingApps(false);
+    }
+  }
+
+  async function handleOpenAppPicker() {
+    setShowAppPicker(true);
+    await refreshRtssApps();
+  }
+
+  async function handleSelectApp(app: RtssAppSummary) {
+    try {
+      await invoke('set_fps_tracking_target', { processId: app.process_id });
+      setSelectedPid(app.process_id);
+      setSelectedName(app.name);
+      setShowAppPicker(false);
+      setFpsStats(null);
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    }
+  }
+
+  async function handleStopTracking() {
+    try {
+      await invoke('set_fps_tracking_target', { processId: null });
+      setSelectedPid(null);
+      setSelectedName(null);
+      setFpsStats(null);
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    }
+  }
 
   async function persistLayout(newLayout: WidgetConfig[]) {
     setLayout(newLayout);
@@ -149,6 +222,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         { id: 'alerts', visible: true },
         { id: 'cpu_graph', visible: true },
         { id: 'ram_graph', visible: true },
+        { id: 'fps', visible: true },
       ];
       const applied = await invoke<WidgetConfig[]>('set_monitor_layout', { widgets: defaults });
       setLayout(applied);
@@ -609,6 +683,119 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
             <Area type="monotone" dataKey="ram" stroke="#b026ff" strokeWidth={2} fill="url(#ramGradient)" />
           </AreaChart>
         </ResponsiveContainer>
+      </div>
+    ),
+
+    fps: (
+      <div className="bg-frag-surface border border-frag-border rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-bold text-frag-text flex items-center gap-2">
+            <Gauge className="text-frag-primary" size={20} />
+            FPS / 1% Lows
+          </h3>
+          {selectedPid !== null && (
+            <button
+              onClick={handleStopTracking}
+              className="text-xs px-2 py-1 rounded-lg bg-frag-danger/10 text-frag-danger hover:bg-frag-danger/20"
+            >
+              Stop tracking
+            </button>
+          )}
+        </div>
+
+        {selectedPid === null ? (
+          <div>
+            <p className="text-sm text-frag-muted mb-3">
+              Requires RTSS (or MSI Afterburner) to be installed, running, and hooked into a
+              game. FragDesk reads RTSS's frame-timing data — it doesn't hook games directly.
+            </p>
+            <button
+              onClick={handleOpenAppPicker}
+              className="px-3 py-1.5 rounded-lg bg-frag-primary text-frag-bg text-sm font-semibold hover:bg-frag-primary/90"
+            >
+              Select a game to track
+            </button>
+
+            {showAppPicker && (
+              <div className="mt-3 bg-frag-bg border border-frag-border rounded-lg p-3 max-w-sm">
+                {loadingApps ? (
+                  <p className="text-xs text-frag-muted">Checking RTSS...</p>
+                ) : rtssError ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-frag-danger">{rtssError}</p>
+                    <button
+                      onClick={refreshRtssApps}
+                      className="text-xs text-frag-primary hover:underline"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : rtssApps.length === 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-frag-muted">
+                      RTSS is running, but isn't currently hooked into any game. Launch a game
+                      first, then retry.
+                    </p>
+                    <button
+                      onClick={refreshRtssApps}
+                      className="text-xs text-frag-primary hover:underline"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {rtssApps.map((app) => (
+                      <button
+                        key={app.process_id}
+                        onClick={() => handleSelectApp(app)}
+                        className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-frag-surface text-frag-text"
+                      >
+                        {app.name}
+                        <span className="text-frag-muted text-xs ml-2">PID {app.process_id}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <p className="text-xs text-frag-muted mb-3">
+              Tracking: <span className="text-frag-text">{selectedName ?? `PID ${selectedPid}`}</span>
+            </p>
+            {fpsStats === null ? (
+              <p className="text-sm text-frag-muted">Waiting for frame data...</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <p className="text-xs text-frag-muted">Current</p>
+                  <p className="text-2xl font-bold text-frag-primary">
+                    {fpsStats.current_fps.toFixed(0)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-frag-muted">Average</p>
+                  <p className="text-2xl font-bold text-frag-text">
+                    {fpsStats.avg_fps.toFixed(0)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-frag-muted">1% Low</p>
+                  <p className="text-2xl font-bold text-frag-danger">
+                    {fpsStats.one_percent_low_fps.toFixed(0)}
+                  </p>
+                </div>
+              </div>
+            )}
+            {fpsStats && (
+              <p className="text-xs text-frag-muted mt-2">
+                Based on {fpsStats.sample_count} sampled frames
+              </p>
+            )}
+          </div>
+        )}
       </div>
     ),
   };
