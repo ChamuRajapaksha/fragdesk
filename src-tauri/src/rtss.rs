@@ -41,20 +41,33 @@ mod windows_impl {
     };
 
     const RTSS_MAPPING_NAME: &str = "RTSSSharedMemoryV2";
+
     const RTSS_SIGNATURE: &[u8; 4] = b"RTSS";
+    // RTSS's original C code almost certainly sets this via a multichar
+    // literal ('RTSS'), and how that literal's bytes end up laid out in
+    // memory depends on compiler/endianness conventions that differ
+    // across the various community reimplementations of this reader --
+    // some cite the signature as reading "RTSS" in memory order, others
+    // as the byte-reversed "SSTR". Accepting either avoids betting on
+    // one guess. If a real system matches neither, the resulting error
+    // includes the ACTUAL bytes found (as hex), so a wrong assumption
+    // here becomes a precise one-line fix instead of a third blind guess.
+    const RTSS_SIGNATURE_ALT: &[u8; 4] = b"SSTR";
+
     const APP_NAME_MAX_LEN: usize = 260; // MAX_PATH, per the commonly-documented layout
 
     // RTSS doesn't publish an official header for this -- the layout
     // below is the community-reverse-engineered shape used by tools
     // like CapFrameX and various open-source shared-memory readers.
     // Deliberately only reads the fields every source consistently
-    // agrees on (process id, name, last frame time). Extended stats
-    // (min/avg/max/percentile fields some RTSS versions also expose)
-    // are NOT read here -- their presence and exact offset varies
-    // across versions, so 1% lows are instead computed ourselves in
-    // commands/fps.rs from a rolling buffer of frame_time_us samples.
-    // That keeps correctness independent of guessing an uncertain
-    // offset, at the cost of needing our own sampling loop.
+    // agrees on (process id, name, last frame time, frame count).
+    // Extended stats (min/avg/max/percentile fields some RTSS versions
+    // also expose) are NOT read here -- their presence and exact
+    // offset varies across versions, so 1% lows are instead computed
+    // ourselves in commands/fps.rs from a rolling buffer of
+    // frame_time_us samples. That keeps correctness independent of
+    // guessing an uncertain offset, at the cost of needing our own
+    // sampling loop.
     //
     // Robustness measures against a version mismatch:
     // - Signature bytes are checked before trusting anything else.
@@ -77,9 +90,6 @@ mod windows_impl {
     pub fn read() -> Result<Vec<RtssApp>, String> {
         let wide_name = to_wide(RTSS_MAPPING_NAME);
 
-        // NOTE: exact signature (arg types, Result vs raw handle) for
-        // this windows-rs version is unverified -- likely needs
-        // adjustment on first `cargo check`.
         let handle = unsafe { OpenFileMappingW(FILE_MAP_READ.0, false, PCWSTR(wide_name.as_ptr())) }
             .map_err(|_| {
                 "RTSS not detected -- is RTSS or MSI Afterburner running and hooked into a game?"
@@ -113,10 +123,14 @@ mod windows_impl {
 
     unsafe fn parse(base: *const u8) -> Result<Vec<RtssApp>, String> {
         let signature = std::slice::from_raw_parts(base, 4);
-        if signature != RTSS_SIGNATURE {
-            return Err(
-                "RTSS shared memory signature mismatch -- unexpected RTSS version, or RTSS isn't actually running".to_string(),
-            );
+        if signature != RTSS_SIGNATURE && signature != RTSS_SIGNATURE_ALT {
+            return Err(format!(
+                "RTSS shared memory signature mismatch -- found bytes {:02X?} \
+                 (as text: {:?}). Neither expected ordering matched; this is the \
+                 real data needed to fix the signature check precisely.",
+                signature,
+                String::from_utf8_lossy(signature),
+            ));
         }
 
         let read_u32 = |offset: usize| -> u32 {
@@ -152,7 +166,8 @@ mod windows_impl {
                 .iter()
                 .position(|&b| b == 0)
                 .unwrap_or(name_bytes.len());
-            let name = String::from_utf8_lossy(&name_bytes[..name_end]).to_string();
+            let name =
+                process_name(&String::from_utf8_lossy(&name_bytes[..name_end])).to_string();
 
             // offset within entry: processId(4) + name(260) + flags(4)
             // + time0(4) + time1(4) = 276, then frames, then frameTime
@@ -174,5 +189,55 @@ mod windows_impl {
 
     fn to_wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// RTSS stores the hooked executable's FULL path in szName (e.g.
+    /// `C:\Games\Game.exe`). Reduce it to just the process name so the
+    /// UI/OSD doesn't show the whole path. Handles `\` and `/`; already-
+    /// plain names pass through untouched.
+    fn process_name(full_path: &str) -> &str {
+        std::path::Path::new(full_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .filter(|n| !n.is_empty())
+            .unwrap_or(full_path)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::process_name;
+
+        #[test]
+        fn strips_windows_backslash_path() {
+            assert_eq!(process_name(r"C:\Games\Game.exe"), "Game.exe");
+        }
+
+        #[test]
+        fn strips_forward_slash_path() {
+            assert_eq!(process_name("C:/Games/Game.exe"), "Game.exe");
+        }
+
+        #[test]
+        fn already_plain_name_passes_through() {
+            assert_eq!(process_name("Game.exe"), "Game.exe");
+        }
+
+        #[test]
+        fn deep_path_keeps_only_leaf() {
+            assert_eq!(
+                process_name(r"D:\Steam\steamapps\common\Game\bin\x64\Game.exe"),
+                "Game.exe"
+            );
+        }
+
+        #[test]
+        fn trailing_separator_returns_parent_dir() {
+            assert_eq!(process_name(r"C:\Games\"), "Games");
+        }
+
+        #[test]
+        fn empty_input_stays_empty() {
+            assert_eq!(process_name(""), "");
+        }
     }
 }
