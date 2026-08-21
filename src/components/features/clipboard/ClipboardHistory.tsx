@@ -294,7 +294,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
                   )}
                   
                   <div className="flex-1 min-w-0">
-                    <p className="text-frag-text break-words line-clamp-3">
+                    <p className="text-frag-text break-words line-clamp-3 overflow-hidden">
                       {item.content}
                     </p>
                     <div className="flex items-center gap-3 mt-2">
