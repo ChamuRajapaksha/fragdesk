@@ -23,6 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 
+# Local AI development context
+AGENTS.md
+.agents/
+
 # Environment variables and secrets
 .env
 .env.local
