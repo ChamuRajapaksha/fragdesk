@@ -99,7 +99,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <motion.div
           className="bg-frag-surface border border-frag-border rounded-lg p-6 cursor-pointer"
           whileHover={{ y: -4 }}
@@ -138,7 +138,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
       </div>
 
       {/* Feature Cards */}
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4">
         <h2 className="text-2xl font-bold text-frag-text mb-4">Features</h2>
 
         {features.map((feature, index) => {
