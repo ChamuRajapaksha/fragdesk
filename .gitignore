@@ -26,6 +26,7 @@ dist-ssr
 # Local AI development context
 AGENTS.md
 .agents/
+skills-lock.json
 
 # Environment variables and secrets
 .env
