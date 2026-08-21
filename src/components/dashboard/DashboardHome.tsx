@@ -87,7 +87,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
   }, []);
 
   return (
-    <div className="max-w-6xl">
+    <div>
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-4xl font-bold text-frag-text mb-2">
