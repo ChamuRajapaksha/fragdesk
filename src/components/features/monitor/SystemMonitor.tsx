@@ -801,7 +801,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   };
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-frag-text mb-2">System Monitor</h1>
