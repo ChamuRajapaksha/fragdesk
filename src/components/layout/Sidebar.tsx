@@ -22,7 +22,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
   const { user, loading: authLoading } = useAuth();
 
   return (
-    <div className="w-64 bg-frag-surface border-r border-frag-border h-screen flex flex-col">
+    <div className="w-60 md:w-64 bg-frag-surface border-r border-frag-border h-screen flex flex-col">
       {/* Logo */}
       <div className="p-6 border-b border-frag-border">
         <h1 className="text-2xl font-bold text-frag-primary">
