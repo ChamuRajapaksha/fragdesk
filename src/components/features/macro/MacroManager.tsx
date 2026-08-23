@@ -826,7 +826,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         )}
                                     </div>
                                     {isThisPlaying && progress && (
-                                        <div className="mt-2 w-64">
+                                        <div className="mt-2 w-full max-w-64">
                                             <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                                                 <div
                                                     className="h-full bg-[#b026ff] transition-all"
