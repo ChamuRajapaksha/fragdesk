@@ -732,7 +732,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                             <button
                                                 onClick={() => startRename(m)}
                                                 title="Click to rename"
-                                                className="font-medium text-left hover:text-[#00d9ff] transition-colors"
+                                                className="min-w-0 truncate font-medium text-left hover:text-[#00d9ff] transition-colors"
                                             >
                                                 {m.name}
                                             </button>
