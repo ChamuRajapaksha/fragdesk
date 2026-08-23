@@ -600,7 +600,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                 onChange={(e) => setMacroName(e.target.value)}
                                 onKeyDown={(e) => e.key === "Enter" && handleSaveMacro()}
                                 placeholder="Name this macro..."
-                                className="flex-1 bg-[#0a0e27] border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#00d9ff]"
+                                className="flex-1 min-w-0 bg-[#0a0e27] border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#00d9ff]"
                             />
                             <button
                                 onClick={handleSaveMacro}
@@ -726,7 +726,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                                     if (e.key === "Escape") cancelRename();
                                                 }}
                                                 onBlur={commitRename}
-                                                className="bg-[#0a0e27] border border-[#00d9ff] rounded px-2 py-1 text-sm w-full max-w-xs focus:outline-none"
+                                                className="min-w-0 w-full max-w-xs bg-[#0a0e27] border border-[#00d9ff] rounded px-2 py-1 text-sm focus:outline-none"
                                             />
                                         ) : (
                                             <button
