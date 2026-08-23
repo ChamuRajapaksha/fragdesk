@@ -678,7 +678,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                 <button
                                     key={tag}
                                     onClick={() => toggleTagFilter(tag)}
-                                    className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                                        className={`max-w-xs truncate text-xs px-2 py-1 rounded-full border transition-colors ${
                                         active
                                             ? "bg-[#00d9ff]/15 border-[#00d9ff]/50 text-[#00d9ff]"
                                             : "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200"
