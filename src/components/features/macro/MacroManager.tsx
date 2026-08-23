@@ -790,7 +790,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                                 key={tag}
                                                 className="inline-flex items-center gap-1 text-xs bg-white/5 text-gray-300 rounded-full px-2 py-0.5"
                                             >
-                                                {tag}
+                                                <span className="max-w-xs truncate">{tag}</span>
                                                 <button
                                                     onClick={() => handleRemoveTag(m, tag)}
                                                     className="text-gray-500 hover:text-[#ff3366]"
