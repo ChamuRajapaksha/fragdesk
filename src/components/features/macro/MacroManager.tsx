@@ -531,7 +531,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             )}
 
             {error && (
-                <div className="bg-[#ff3366]/10 border border-[#ff3366]/40 text-[#ff3366] text-sm rounded-lg px-4 py-2">
+                <div className="break-words bg-[#ff3366]/10 border border-[#ff3366]/40 text-[#ff3366] text-sm rounded-lg px-4 py-2">
                     {error}
                 </div>
             )}
