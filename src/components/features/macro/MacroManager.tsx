@@ -765,7 +765,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                             </span>
                                         ) : m.hotkey ? (
                                             <span className="inline-flex items-center gap-1.5">
-                                                <span className="text-xs font-mono bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
+                                                    <span className="break-words text-xs font-mono bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
                                                     {m.hotkey.replace("CommandOrControl", "Ctrl")}
                                                 </span>
                                                 <button
