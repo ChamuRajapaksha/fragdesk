@@ -843,7 +843,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         </div>
                                     )}
                                 </div>
-                                <div className="flex gap-2 shrink-0 ml-4">
+                                <div className="flex flex-wrap items-center gap-2 shrink-0 ml-4">
                                     {isThisPlaying ? (
                                         <button
                                             onClick={handleStopPlayback}
