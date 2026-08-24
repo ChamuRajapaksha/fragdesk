@@ -231,7 +231,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
       </div>
 
       {error && (
-        <div className="mb-4 bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2">
+        <div className="mb-4 bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2 break-words">
           {error}
         </div>
       )}
