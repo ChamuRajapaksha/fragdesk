@@ -190,8 +190,8 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
   return (
     <div className="max-w-4xl">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
+      <div className="flex items-center justify-between gap-y-3 flex-wrap mb-6">
+        <div className="min-w-0">
           <h1 className="text-3xl font-bold text-frag-text mb-2">Clipboard Manager</h1>
           <p className="text-frag-muted">
             {isMonitoring 
@@ -231,7 +231,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
       </div>
 
       {error && (
-        <div className="mb-4 bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2">
+        <div className="mb-4 bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2 break-words">
           {error}
         </div>
       )}
@@ -294,7 +294,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
                   )}
                   
                   <div className="flex-1 min-w-0">
-                    <p className="text-frag-text break-words line-clamp-3">
+                    <p className="text-frag-text break-words line-clamp-3 overflow-hidden">
                       {item.content}
                     </p>
                     <div className="flex items-center gap-3 mt-2">
@@ -337,7 +337,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
                     )}
                   </div>
 
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex gap-2 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => copyToClipboard(item.content)}
                       className="p-2 bg-frag-primary/10 text-frag-primary rounded-lg hover:bg-frag-primary/20 transition-colors"

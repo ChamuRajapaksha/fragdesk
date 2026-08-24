@@ -769,19 +769,19 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
               <p className="text-sm text-frag-muted">Waiting for frame data...</p>
             ) : (
               <div className="grid grid-cols-3 gap-3">
-                <div>
+                <div className="overflow-hidden whitespace-nowrap min-w-0">
                   <p className="text-xs text-frag-muted">Current</p>
                   <p className="text-2xl font-bold text-frag-primary">
                     {fpsStats.current_fps.toFixed(0)}
                   </p>
                 </div>
-                <div>
+                <div className="overflow-hidden whitespace-nowrap min-w-0">
                   <p className="text-xs text-frag-muted">Average</p>
                   <p className="text-2xl font-bold text-frag-text">
                     {fpsStats.avg_fps.toFixed(0)}
                   </p>
                 </div>
-                <div>
+                <div className="overflow-hidden whitespace-nowrap min-w-0">
                   <p className="text-xs text-frag-muted">1% Low</p>
                   <p className="text-2xl font-bold text-frag-danger">
                     {fpsStats.one_percent_low_fps.toFixed(0)}
@@ -801,7 +801,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   };
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-frag-text mb-2">System Monitor</h1>

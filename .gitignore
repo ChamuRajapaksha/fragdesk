@@ -23,6 +23,12 @@ dist-ssr
 *.sln
 *.sw?
 
+# Local AI development context
+AGENTS.md
+.agents/
+skills-lock.json
+opencode.json
+
 # Environment variables and secrets
 .env
 .env.local

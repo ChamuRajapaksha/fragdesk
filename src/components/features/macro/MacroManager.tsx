@@ -531,7 +531,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             )}
 
             {error && (
-                <div className="bg-[#ff3366]/10 border border-[#ff3366]/40 text-[#ff3366] text-sm rounded-lg px-4 py-2">
+                <div className="break-words bg-[#ff3366]/10 border border-[#ff3366]/40 text-[#ff3366] text-sm rounded-lg px-4 py-2">
                     {error}
                 </div>
             )}
@@ -600,7 +600,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                 onChange={(e) => setMacroName(e.target.value)}
                                 onKeyDown={(e) => e.key === "Enter" && handleSaveMacro()}
                                 placeholder="Name this macro..."
-                                className="flex-1 bg-[#0a0e27] border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#00d9ff]"
+                                className="flex-1 min-w-0 bg-[#0a0e27] border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#00d9ff]"
                             />
                             <button
                                 onClick={handleSaveMacro}
@@ -678,7 +678,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                 <button
                                     key={tag}
                                     onClick={() => toggleTagFilter(tag)}
-                                    className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                                        className={`max-w-xs truncate text-xs px-2 py-1 rounded-full border transition-colors ${
                                         active
                                             ? "bg-[#00d9ff]/15 border-[#00d9ff]/50 text-[#00d9ff]"
                                             : "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200"
@@ -726,13 +726,13 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                                     if (e.key === "Escape") cancelRename();
                                                 }}
                                                 onBlur={commitRename}
-                                                className="bg-[#0a0e27] border border-[#00d9ff] rounded px-2 py-1 text-sm w-full max-w-xs focus:outline-none"
+                                                className="min-w-0 w-full max-w-xs bg-[#0a0e27] border border-[#00d9ff] rounded px-2 py-1 text-sm focus:outline-none"
                                             />
                                         ) : (
                                             <button
                                                 onClick={() => startRename(m)}
                                                 title="Click to rename"
-                                                className="font-medium text-left hover:text-[#00d9ff] transition-colors"
+                                                className="min-w-0 truncate font-medium text-left hover:text-[#00d9ff] transition-colors"
                                             >
                                                 {m.name}
                                             </button>
@@ -740,7 +740,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         {m.source === "community" && (
                                             <span
                                                 title="Imported from the Community Library — reviewed this before importing? Playing it simulates real input on your machine."
-                                                className="text-xs bg-[#ff3366]/10 text-[#ff3366] border border-[#ff3366]/30 rounded px-1.5 py-0.5"
+                                                className="shrink-0 text-xs bg-[#ff3366]/10 text-[#ff3366] border border-[#ff3366]/30 rounded px-1.5 py-0.5"
                                             >
                                                 community
                                             </span>
@@ -748,7 +748,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         {m.source === "starter" && (
                                             <span
                                                 title="Imported from FragDesk's bundled starter pack"
-                                                className="text-xs bg-white/5 text-gray-400 rounded px-1.5 py-0.5"
+                                                className="shrink-0 text-xs bg-white/5 text-gray-400 rounded px-1.5 py-0.5"
                                             >
                                                 starter
                                             </span>
@@ -765,7 +765,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                             </span>
                                         ) : m.hotkey ? (
                                             <span className="inline-flex items-center gap-1.5">
-                                                <span className="text-xs font-mono bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
+                                                    <span className="break-words text-xs font-mono bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
                                                     {m.hotkey.replace("CommandOrControl", "Ctrl")}
                                                 </span>
                                                 <button
@@ -790,7 +790,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                                 key={tag}
                                                 className="inline-flex items-center gap-1 text-xs bg-white/5 text-gray-300 rounded-full px-2 py-0.5"
                                             >
-                                                {tag}
+                                                <span className="max-w-xs truncate">{tag}</span>
                                                 <button
                                                     onClick={() => handleRemoveTag(m, tag)}
                                                     className="text-gray-500 hover:text-[#ff3366]"
@@ -826,7 +826,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         )}
                                     </div>
                                     {isThisPlaying && progress && (
-                                        <div className="mt-2 w-64">
+                                        <div className="mt-2 w-full max-w-64">
                                             <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                                                 <div
                                                     className="h-full bg-[#b026ff] transition-all"
@@ -843,7 +843,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         </div>
                                     )}
                                 </div>
-                                <div className="flex gap-2 shrink-0 ml-4">
+                                <div className="flex flex-wrap items-center gap-2 shrink-0 ml-4">
                                     {isThisPlaying ? (
                                         <button
                                             onClick={handleStopPlayback}
