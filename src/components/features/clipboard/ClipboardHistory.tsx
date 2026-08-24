@@ -190,8 +190,8 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
   return (
     <div className="max-w-4xl">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
+      <div className="flex items-center justify-between gap-y-3 flex-wrap mb-6">
+        <div className="min-w-0">
           <h1 className="text-3xl font-bold text-frag-text mb-2">Clipboard Manager</h1>
           <p className="text-frag-muted">
             {isMonitoring 
