@@ -337,7 +337,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
                     )}
                   </div>
 
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex gap-2 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => copyToClipboard(item.content)}
                       className="p-2 bg-frag-primary/10 text-frag-primary rounded-lg hover:bg-frag-primary/20 transition-colors"
