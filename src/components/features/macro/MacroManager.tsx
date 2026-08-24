@@ -740,7 +740,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         {m.source === "community" && (
                                             <span
                                                 title="Imported from the Community Library — reviewed this before importing? Playing it simulates real input on your machine."
-                                                className="text-xs bg-[#ff3366]/10 text-[#ff3366] border border-[#ff3366]/30 rounded px-1.5 py-0.5"
+                                                className="shrink-0 text-xs bg-[#ff3366]/10 text-[#ff3366] border border-[#ff3366]/30 rounded px-1.5 py-0.5"
                                             >
                                                 community
                                             </span>
@@ -748,7 +748,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         {m.source === "starter" && (
                                             <span
                                                 title="Imported from FragDesk's bundled starter pack"
-                                                className="text-xs bg-white/5 text-gray-400 rounded px-1.5 py-0.5"
+                                                className="shrink-0 text-xs bg-white/5 text-gray-400 rounded px-1.5 py-0.5"
                                             >
                                                 starter
                                             </span>
