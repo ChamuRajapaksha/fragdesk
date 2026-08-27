@@ -157,8 +157,8 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
                 <Icon className={feature.color} size={32} />
               </div>
 
-              <div className="flex-1">
-                <h3 className="text-xl font-semibold text-frag-text mb-1">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-xl font-semibold text-frag-text mb-1 truncate">
                   {feature.title}
                 </h3>
                 <p className="text-frag-muted">
