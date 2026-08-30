@@ -60,7 +60,7 @@ export default function FragmentLibrary() {
             </div>
 
             {error && (
-                <div className="bg-[#ff3366]/10 border border-[#ff3366]/40 text-[#ff3366] text-sm rounded-lg px-4 py-2">
+                <div className="bg-[#ff3366]/10 border border-[#ff3366]/40 text-[#ff3366] text-sm rounded-lg px-4 py-2 break-words">
                     {error}
                 </div>
             )}
