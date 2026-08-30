@@ -80,10 +80,10 @@ export default function FragmentLibrary() {
                                 key={f.filename}
                                 className="bg-[#141933] rounded-xl p-4 border border-white/5 flex items-center justify-between"
                             >
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <p className="font-medium">{f.name}</p>
-                                        <span className="text-xs bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <p className="font-medium truncate">{f.name}</p>
+                                        <span className="text-xs bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5 shrink-0">
                                             {TYPE_LABELS[f.fragment_type] ?? f.fragment_type}
                                         </span>
                                     </div>
