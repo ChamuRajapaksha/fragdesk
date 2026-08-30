@@ -92,7 +92,7 @@ export default function FragmentLibrary() {
                                             {f.tags.map((tag) => (
                                                 <span
                                                     key={tag}
-                                                    className="text-xs bg-white/5 text-gray-400 rounded-full px-2 py-0.5"
+                                                    className="text-xs bg-white/5 text-gray-400 rounded-full px-2 py-0.5 break-words"
                                                 >
                                                     {tag}
                                                 </span>
