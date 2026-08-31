@@ -476,7 +476,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
               </div>
               <div>
                 <p className="text-frag-muted text-sm">RAM Usage</p>
-                <p className="text-xs text-frag-muted">
+                <p className="text-xs text-frag-muted truncate">
                   {formatBytes(stats.ram_used)} / {formatBytes(stats.ram_total)}
                 </p>
               </div>
