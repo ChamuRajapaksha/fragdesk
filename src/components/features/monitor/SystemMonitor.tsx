@@ -802,16 +802,16 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-frag-text mb-2">System Monitor</h1>
-          <p className="text-frag-muted">
+      <div className="flex items-center justify-between mb-6 gap-4">
+        <div className="min-w-0">
+          <h1 className="text-3xl font-bold text-frag-text mb-2 truncate">System Monitor</h1>
+          <p className="text-frag-muted truncate">
             {isMonitoring ? '🟢 Real-time system performance monitoring' : 'Monitoring paused'}
           </p>
         </div>
         <button
           onClick={() => setShowCustomize((v) => !v)}
-          className="px-3 py-2 rounded-lg bg-frag-surface border border-frag-border text-frag-muted hover:text-frag-text flex items-center gap-2 text-sm"
+          className="px-3 py-2 rounded-lg bg-frag-surface border border-frag-border text-frag-muted hover:text-frag-text flex items-center gap-2 text-sm shrink-0"
         >
           <LayoutGrid size={16} />
           Customize Layout
