@@ -433,7 +433,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   const widgetContent: Record<string, ReactNode> = {
     stats: (
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <motion.div
           className="bg-frag-surface border border-frag-border rounded-lg p-6"
           whileHover={{ y: -4 }}
