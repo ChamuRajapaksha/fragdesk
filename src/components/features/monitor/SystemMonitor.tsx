@@ -871,12 +871,12 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       {firedAlerts.length > 0 && (
         <div className="space-y-2 mb-6">
           {firedAlerts.map((alert, i) => (
-            <div key={`${alert.ruleId}-${i}`} className="flex items-center justify-between bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-3">
-              <span className="flex items-center gap-2">
-                <Bell size={16} />
+            <div key={`${alert.ruleId}-${i}`} className="flex items-center justify-between bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-3 gap-3">
+              <span className="flex items-center gap-2 min-w-0 break-words">
+                <Bell size={16} className="shrink-0" />
                 {alert.message}
               </span>
-              <button onClick={() => dismissAlert(alert.ruleId)} className="hover:text-white">
+              <button onClick={() => dismissAlert(alert.ruleId)} className="hover:text-white shrink-0">
                 <X size={16} />
               </button>
             </div>
