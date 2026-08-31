@@ -541,7 +541,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
         {showRuleForm && (
           <form onSubmit={handleCreateRule} className="flex flex-wrap items-end gap-3 mb-4 pb-4 border-b border-frag-border">
-            <div>
+            <div className="min-w-0">
               <label className="text-xs text-frag-muted block mb-1">Name</label>
               <input
                 type="text"
@@ -549,7 +549,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                 value={ruleName}
                 onChange={(e) => setRuleName(e.target.value)}
                 placeholder="e.g. High CPU warning"
-                className="bg-frag-bg border border-frag-border rounded-lg px-3 py-1.5 text-sm text-frag-text focus:outline-none focus:border-frag-primary"
+                className="bg-frag-bg border border-frag-border rounded-lg px-3 py-1.5 text-sm text-frag-text focus:outline-none focus:border-frag-primary w-full sm:w-auto"
               />
             </div>
             <div>
