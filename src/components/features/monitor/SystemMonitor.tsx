@@ -688,15 +688,15 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
     fps: (
       <div className="bg-frag-surface border border-frag-border rounded-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-bold text-frag-text flex items-center gap-2">
-            <Gauge className="text-frag-primary" size={20} />
-            FPS / 1% Lows
+        <div className="flex items-center justify-between mb-4 gap-2">
+          <h3 className="text-xl font-bold text-frag-text flex items-center gap-2 min-w-0">
+            <Gauge className="text-frag-primary shrink-0" size={20} />
+            <span className="truncate">FPS / 1% Lows</span>
           </h3>
           {selectedPid !== null && (
             <button
               onClick={handleStopTracking}
-              className="text-xs px-2 py-1 rounded-lg bg-frag-danger/10 text-frag-danger hover:bg-frag-danger/20"
+              className="text-xs px-2 py-1 rounded-lg bg-frag-danger/10 text-frag-danger hover:bg-frag-danger/20 shrink-0"
             >
               Stop tracking
             </button>
@@ -705,7 +705,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
         {selectedPid === null ? (
           <div>
-            <p className="text-sm text-frag-muted mb-3">
+            <p className="text-sm text-frag-muted mb-3 break-words">
               Requires RTSS (or MSI Afterburner) to be installed, running, and hooked into a
               game. FragDesk reads RTSS's frame-timing data — it doesn't hook games directly.
             </p>
@@ -749,10 +749,10 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                       <button
                         key={app.process_id}
                         onClick={() => handleSelectApp(app)}
-                        className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-frag-surface text-frag-text"
+                        className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-frag-surface text-frag-text flex items-center gap-2 min-w-0"
                       >
-                        {app.name}
-                        <span className="text-frag-muted text-xs ml-2">PID {app.process_id}</span>
+                        <span className="truncate">{app.name}</span>
+                        <span className="text-frag-muted text-xs shrink-0">PID {app.process_id}</span>
                       </button>
                     ))}
                   </div>
