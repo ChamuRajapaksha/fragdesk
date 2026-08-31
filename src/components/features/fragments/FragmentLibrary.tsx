@@ -60,7 +60,7 @@ export default function FragmentLibrary() {
             </div>
 
             {error && (
-                <div className="bg-[#ff3366]/10 border border-[#ff3366]/40 text-[#ff3366] text-sm rounded-lg px-4 py-2">
+                <div className="bg-[#ff3366]/10 border border-[#ff3366]/40 text-[#ff3366] text-sm rounded-lg px-4 py-2 break-words">
                     {error}
                 </div>
             )}
@@ -80,10 +80,10 @@ export default function FragmentLibrary() {
                                 key={f.filename}
                                 className="bg-[#141933] rounded-xl p-4 border border-white/5 flex items-center justify-between"
                             >
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <p className="font-medium">{f.name}</p>
-                                        <span className="text-xs bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <p className="font-medium truncate">{f.name}</p>
+                                        <span className="text-xs bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5 shrink-0">
                                             {TYPE_LABELS[f.fragment_type] ?? f.fragment_type}
                                         </span>
                                     </div>
@@ -92,7 +92,7 @@ export default function FragmentLibrary() {
                                             {f.tags.map((tag) => (
                                                 <span
                                                     key={tag}
-                                                    className="text-xs bg-white/5 text-gray-400 rounded-full px-2 py-0.5"
+                                                    className="text-xs bg-white/5 text-gray-400 rounded-full px-2 py-0.5 break-words"
                                                 >
                                                     {tag}
                                                 </span>

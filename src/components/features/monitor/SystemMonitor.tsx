@@ -433,7 +433,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   const widgetContent: Record<string, ReactNode> = {
     stats: (
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <motion.div
           className="bg-frag-surface border border-frag-border rounded-lg p-6"
           whileHover={{ y: -4 }}
@@ -476,7 +476,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
               </div>
               <div>
                 <p className="text-frag-muted text-sm">RAM Usage</p>
-                <p className="text-xs text-frag-muted">
+                <p className="text-xs text-frag-muted truncate">
                   {formatBytes(stats.ram_used)} / {formatBytes(stats.ram_total)}
                 </p>
               </div>
@@ -541,7 +541,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
         {showRuleForm && (
           <form onSubmit={handleCreateRule} className="flex flex-wrap items-end gap-3 mb-4 pb-4 border-b border-frag-border">
-            <div>
+            <div className="min-w-0">
               <label className="text-xs text-frag-muted block mb-1">Name</label>
               <input
                 type="text"
@@ -549,7 +549,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                 value={ruleName}
                 onChange={(e) => setRuleName(e.target.value)}
                 placeholder="e.g. High CPU warning"
-                className="bg-frag-bg border border-frag-border rounded-lg px-3 py-1.5 text-sm text-frag-text focus:outline-none focus:border-frag-primary"
+                className="bg-frag-bg border border-frag-border rounded-lg px-3 py-1.5 text-sm text-frag-text focus:outline-none focus:border-frag-primary w-full sm:w-auto"
               />
             </div>
             <div>
@@ -596,23 +596,23 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         ) : (
           <div className="space-y-2">
             {rules.map((rule) => (
-              <div key={rule.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-4 py-2.5">
-                <div className="flex items-center gap-3">
+              <div key={rule.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-4 py-2.5 gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <button
                     onClick={() => handleToggleRule(rule.id)}
-                    className={`w-9 h-5 rounded-full transition-colors relative ${rule.enabled ? 'bg-frag-success' : 'bg-frag-border'}`}
+                    className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${rule.enabled ? 'bg-frag-success' : 'bg-frag-border'}`}
                   >
                     <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${rule.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                   </button>
-                  <div>
-                    <p className="text-sm text-frag-text font-medium">{rule.name}</p>
-                    <p className="text-xs text-frag-muted">
+                  <div className="min-w-0">
+                    <p className="text-sm text-frag-text font-medium truncate">{rule.name}</p>
+                    <p className="text-xs text-frag-muted truncate">
                       {rule.metric.toUpperCase()} {rule.comparison} {rule.threshold}%
                       {rule.source === 'community' && <span className="ml-2 text-frag-accent">from community</span>}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   {sharedRuleIds.has(rule.id) ? (
                     <span className="text-xs text-frag-success">Shared ✓</span>
                   ) : (
@@ -688,15 +688,15 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
     fps: (
       <div className="bg-frag-surface border border-frag-border rounded-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-bold text-frag-text flex items-center gap-2">
-            <Gauge className="text-frag-primary" size={20} />
-            FPS / 1% Lows
+        <div className="flex items-center justify-between mb-4 gap-2">
+          <h3 className="text-xl font-bold text-frag-text flex items-center gap-2 min-w-0">
+            <Gauge className="text-frag-primary shrink-0" size={20} />
+            <span className="truncate">FPS / 1% Lows</span>
           </h3>
           {selectedPid !== null && (
             <button
               onClick={handleStopTracking}
-              className="text-xs px-2 py-1 rounded-lg bg-frag-danger/10 text-frag-danger hover:bg-frag-danger/20"
+              className="text-xs px-2 py-1 rounded-lg bg-frag-danger/10 text-frag-danger hover:bg-frag-danger/20 shrink-0"
             >
               Stop tracking
             </button>
@@ -705,7 +705,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
         {selectedPid === null ? (
           <div>
-            <p className="text-sm text-frag-muted mb-3">
+            <p className="text-sm text-frag-muted mb-3 break-words">
               Requires RTSS (or MSI Afterburner) to be installed, running, and hooked into a
               game. FragDesk reads RTSS's frame-timing data — it doesn't hook games directly.
             </p>
@@ -749,10 +749,10 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                       <button
                         key={app.process_id}
                         onClick={() => handleSelectApp(app)}
-                        className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-frag-surface text-frag-text"
+                        className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-frag-surface text-frag-text flex items-center gap-2 min-w-0"
                       >
-                        {app.name}
-                        <span className="text-frag-muted text-xs ml-2">PID {app.process_id}</span>
+                        <span className="truncate">{app.name}</span>
+                        <span className="text-frag-muted text-xs shrink-0">PID {app.process_id}</span>
                       </button>
                     ))}
                   </div>
@@ -802,16 +802,16 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-frag-text mb-2">System Monitor</h1>
-          <p className="text-frag-muted">
+      <div className="flex items-center justify-between mb-6 gap-4">
+        <div className="min-w-0">
+          <h1 className="text-3xl font-bold text-frag-text mb-2 truncate">System Monitor</h1>
+          <p className="text-frag-muted truncate">
             {isMonitoring ? '🟢 Real-time system performance monitoring' : 'Monitoring paused'}
           </p>
         </div>
         <button
           onClick={() => setShowCustomize((v) => !v)}
-          className="px-3 py-2 rounded-lg bg-frag-surface border border-frag-border text-frag-muted hover:text-frag-text flex items-center gap-2 text-sm"
+          className="px-3 py-2 rounded-lg bg-frag-surface border border-frag-border text-frag-muted hover:text-frag-text flex items-center gap-2 text-sm shrink-0"
         >
           <LayoutGrid size={16} />
           Customize Layout
@@ -821,11 +821,11 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       {showCustomize && (
         <div className="bg-frag-surface border border-frag-border rounded-lg p-4 mb-6 space-y-2">
           {layout.map((w, i) => (
-            <div key={w.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-3 py-2">
-              <span className={`text-sm ${w.visible ? 'text-frag-text' : 'text-frag-muted line-through'}`}>
+            <div key={w.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-3 py-2 gap-2">
+              <span className={`text-sm min-w-0 truncate ${w.visible ? 'text-frag-text' : 'text-frag-muted line-through'}`}>
                 {WIDGET_LABELS[w.id] ?? w.id}
               </span>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 shrink-0">
                 <button onClick={() => moveWidget(w.id, -1)} disabled={i === 0} className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted">
                   <ArrowUp size={14} />
                 </button>
@@ -838,13 +838,13 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
               </div>
             </div>
           ))}
-          <div className="flex items-center justify-between pt-2 border-t border-frag-border">
-            <button onClick={resetLayout} className="text-xs text-frag-muted hover:text-frag-text">
+          <div className="flex items-center justify-between pt-2 border-t border-frag-border gap-2">
+            <button onClick={resetLayout} className="text-xs text-frag-muted hover:text-frag-text shrink-0">
               Reset to default
             </button>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               {layoutShared ? (
-                <span className="text-xs text-frag-success">Shared ✓</span>
+                <span className="text-xs text-frag-success shrink-0">Shared ✓</span>
               ) : (
                 <>
                   <input
@@ -852,12 +852,12 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                     value={layoutNameDraft}
                     onChange={(e) => setLayoutNameDraft(e.target.value)}
                     placeholder="Name this layout..."
-                    className="bg-frag-bg border border-frag-border rounded-lg px-2 py-1 text-xs text-frag-text w-40"
+                    className="bg-frag-bg border border-frag-border rounded-lg px-2 py-1 text-xs text-frag-text w-full min-w-0"
                   />
                   <button
                     onClick={handleShareLayout}
                     disabled={sharingLayout || !layoutNameDraft.trim()}
-                    className="text-xs px-2 py-1 rounded-lg bg-frag-primary text-frag-bg font-medium disabled:opacity-40"
+                    className="text-xs px-2 py-1 rounded-lg bg-frag-primary text-frag-bg font-medium disabled:opacity-40 shrink-0"
                   >
                     {sharingLayout ? '...' : 'Share layout'}
                   </button>
@@ -871,12 +871,12 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       {firedAlerts.length > 0 && (
         <div className="space-y-2 mb-6">
           {firedAlerts.map((alert, i) => (
-            <div key={`${alert.ruleId}-${i}`} className="flex items-center justify-between bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-3">
-              <span className="flex items-center gap-2">
-                <Bell size={16} />
+            <div key={`${alert.ruleId}-${i}`} className="flex items-center justify-between bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-3 gap-3">
+              <span className="flex items-center gap-2 min-w-0 break-words">
+                <Bell size={16} className="shrink-0" />
                 {alert.message}
               </span>
-              <button onClick={() => dismissAlert(alert.ruleId)} className="hover:text-white">
+              <button onClick={() => dismissAlert(alert.ruleId)} className="hover:text-white shrink-0">
                 <X size={16} />
               </button>
             </div>
