@@ -596,23 +596,23 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         ) : (
           <div className="space-y-2">
             {rules.map((rule) => (
-              <div key={rule.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-4 py-2.5">
-                <div className="flex items-center gap-3">
+              <div key={rule.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-4 py-2.5 gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <button
                     onClick={() => handleToggleRule(rule.id)}
-                    className={`w-9 h-5 rounded-full transition-colors relative ${rule.enabled ? 'bg-frag-success' : 'bg-frag-border'}`}
+                    className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${rule.enabled ? 'bg-frag-success' : 'bg-frag-border'}`}
                   >
                     <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${rule.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                   </button>
-                  <div>
-                    <p className="text-sm text-frag-text font-medium">{rule.name}</p>
-                    <p className="text-xs text-frag-muted">
+                  <div className="min-w-0">
+                    <p className="text-sm text-frag-text font-medium truncate">{rule.name}</p>
+                    <p className="text-xs text-frag-muted truncate">
                       {rule.metric.toUpperCase()} {rule.comparison} {rule.threshold}%
                       {rule.source === 'community' && <span className="ml-2 text-frag-accent">from community</span>}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   {sharedRuleIds.has(rule.id) ? (
                     <span className="text-xs text-frag-success">Shared ✓</span>
                   ) : (
