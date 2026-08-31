@@ -821,11 +821,11 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       {showCustomize && (
         <div className="bg-frag-surface border border-frag-border rounded-lg p-4 mb-6 space-y-2">
           {layout.map((w, i) => (
-            <div key={w.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-3 py-2">
-              <span className={`text-sm ${w.visible ? 'text-frag-text' : 'text-frag-muted line-through'}`}>
+            <div key={w.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-3 py-2 gap-2">
+              <span className={`text-sm min-w-0 truncate ${w.visible ? 'text-frag-text' : 'text-frag-muted line-through'}`}>
                 {WIDGET_LABELS[w.id] ?? w.id}
               </span>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 shrink-0">
                 <button onClick={() => moveWidget(w.id, -1)} disabled={i === 0} className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted">
                   <ArrowUp size={14} />
                 </button>
@@ -838,13 +838,13 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
               </div>
             </div>
           ))}
-          <div className="flex items-center justify-between pt-2 border-t border-frag-border">
-            <button onClick={resetLayout} className="text-xs text-frag-muted hover:text-frag-text">
+          <div className="flex items-center justify-between pt-2 border-t border-frag-border gap-2">
+            <button onClick={resetLayout} className="text-xs text-frag-muted hover:text-frag-text shrink-0">
               Reset to default
             </button>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               {layoutShared ? (
-                <span className="text-xs text-frag-success">Shared ✓</span>
+                <span className="text-xs text-frag-success shrink-0">Shared ✓</span>
               ) : (
                 <>
                   <input
@@ -852,12 +852,12 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                     value={layoutNameDraft}
                     onChange={(e) => setLayoutNameDraft(e.target.value)}
                     placeholder="Name this layout..."
-                    className="bg-frag-bg border border-frag-border rounded-lg px-2 py-1 text-xs text-frag-text w-40"
+                    className="bg-frag-bg border border-frag-border rounded-lg px-2 py-1 text-xs text-frag-text w-full min-w-0"
                   />
                   <button
                     onClick={handleShareLayout}
                     disabled={sharingLayout || !layoutNameDraft.trim()}
-                    className="text-xs px-2 py-1 rounded-lg bg-frag-primary text-frag-bg font-medium disabled:opacity-40"
+                    className="text-xs px-2 py-1 rounded-lg bg-frag-primary text-frag-bg font-medium disabled:opacity-40 shrink-0"
                   >
                     {sharingLayout ? '...' : 'Share layout'}
                   </button>
