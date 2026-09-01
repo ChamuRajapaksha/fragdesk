@@ -70,7 +70,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
       {isSupabaseConfigured && !authLoading && (
         <button
           onClick={() => setActiveTab('community')}
-          className="mx-4 mb-2 px-3 py-2 rounded-lg bg-frag-bg hover:bg-frag-bg/70 border border-frag-border text-left transition-colors"
+          className="w-[calc(100%-2rem)] mx-4 mb-2 px-3 py-2 rounded-lg bg-frag-bg hover:bg-frag-bg/70 border border-frag-border text-left transition-colors"
         >
           {user ? (
             <>
