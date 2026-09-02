@@ -13,7 +13,7 @@ export default function MainLayout({ children, activeTab, setActiveTab }: MainLa
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
       
       <main className="flex-1 overflow-y-auto">
-        <div className="p-8">
+        <div className="p-4 md:p-8">
           {children}
         </div>
       </main>
