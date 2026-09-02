@@ -508,7 +508,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             : macros.filter((m) => m.tags.some((t) => activeTagFilters.includes(t)));
 
     return (
-        <div className="min-h-full bg-[#0a0e27] text-white p-6 space-y-6">
+        <div className="min-h-full bg-[#0a0e27] text-white p-4 md:p-6 space-y-6">
             <div>
                 <h1 className="text-2xl font-bold text-[#00d9ff]">Macro Manager</h1>
                 <p className="text-sm text-gray-400 mt-1">
@@ -537,7 +537,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             )}
 
             {/* Recording control */}
-            <div className="bg-[#141933] rounded-xl p-5 border border-white/5">
+            <div className="bg-[#141933] rounded-xl p-4 md:p-5 border border-white/5">
                 <p className="text-xs text-gray-500 mb-3">
                     Tip: press{" "}
                     {isCapturingRecordHotkey ? (
@@ -557,7 +557,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                     recording gets captured as part of the macro itself.
                 </p>
                 {!pendingPreview ? (
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-y-3">
                         <div>
                             <div className="flex items-center gap-2">
                                 {isRecording && (
@@ -621,7 +621,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             </div>
 
             {/* Playback options */}
-            <div className="flex items-center gap-6 text-sm">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
                 <label className="flex items-center gap-2 text-gray-400">
                     Speed
                     <select
@@ -652,7 +652,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
 
             {/* Macro list */}
             <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-y-2">
                     <h2 className="text-sm font-medium text-gray-400">Your macros</h2>
                     <div>
                         <input
