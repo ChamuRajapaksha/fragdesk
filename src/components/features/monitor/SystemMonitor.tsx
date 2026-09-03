@@ -435,7 +435,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     stats: (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <motion.div
-          className="bg-frag-surface border border-frag-border rounded-lg p-6"
+          className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
           whileHover={{ y: -4 }}
           transition={{ type: 'spring', stiffness: 300 }}
         >
@@ -465,7 +465,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         </motion.div>
 
         <motion.div
-          className="bg-frag-surface border border-frag-border rounded-lg p-6"
+          className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
           whileHover={{ y: -4 }}
           transition={{ type: 'spring', stiffness: 300 }}
         >
@@ -497,7 +497,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         </motion.div>
 
         <motion.div
-          className="bg-frag-surface border border-frag-border rounded-lg p-6"
+          className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
           whileHover={{ y: -4 }}
           transition={{ type: 'spring', stiffness: 300 }}
         >
@@ -525,7 +525,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     ),
 
     alerts: (
-      <div className="bg-frag-surface border border-frag-border rounded-lg p-6">
+      <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-frag-text flex items-center gap-2">
             <Bell className="text-frag-primary" size={20} />
@@ -639,7 +639,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     ),
 
     cpu_graph: (
-      <div className="bg-frag-surface border border-frag-border rounded-lg p-6">
+      <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
         <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
           <Cpu className="text-frag-primary" size={20} />
           CPU Usage Over Time
@@ -663,7 +663,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     ),
 
     ram_graph: (
-      <div className="bg-frag-surface border border-frag-border rounded-lg p-6">
+      <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
         <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
           <MemoryStick className="text-frag-accent" size={20} />
           RAM Usage Over Time
@@ -687,7 +687,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     ),
 
     fps: (
-      <div className="bg-frag-surface border border-frag-border rounded-lg p-6">
+      <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
         <div className="flex items-center justify-between mb-4 gap-2">
           <h3 className="text-xl font-bold text-frag-text flex items-center gap-2 min-w-0">
             <Gauge className="text-frag-primary shrink-0" size={20} />
@@ -802,7 +802,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 gap-4">
+        <div className="flex flex-wrap items-center justify-between mb-4 md:mb-6 gap-4 gap-y-3">
         <div className="min-w-0">
           <h1 className="text-3xl font-bold text-frag-text mb-2 truncate">System Monitor</h1>
           <p className="text-frag-muted truncate">
@@ -890,7 +890,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         </div>
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-3 md:space-y-4">
         {layout
           .filter((w) => w.visible)
           .map((w) => (

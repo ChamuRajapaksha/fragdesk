@@ -50,7 +50,7 @@ export default function FragmentLibrary() {
     }
 
     return (
-        <div className="min-h-full bg-[#0a0e27] text-white p-6 space-y-6">
+        <div className="min-h-full bg-[#0a0e27] text-white p-4 md:p-6 space-y-6">
             <div>
                 <h1 className="text-2xl font-bold text-[#00d9ff]">Fragment Library</h1>
                 <p className="text-sm text-gray-400 mt-1">
@@ -78,7 +78,7 @@ export default function FragmentLibrary() {
                         return (
                             <div
                                 key={f.filename}
-                                className="bg-[#141933] rounded-xl p-4 border border-white/5 flex items-center justify-between"
+                                className="bg-[#141933] rounded-xl p-3 md:p-4 border border-white/5 flex flex-wrap items-center justify-between gap-y-3"
                             >
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 min-w-0">

@@ -48,7 +48,7 @@ export default function SettingsPage() {
   }, [isCapturing]);
 
   return (
-    <div className="max-w-2xl space-y-8">
+    <div className="max-w-2xl w-full space-y-6 md:space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-frag-text">Settings</h1>
         <p className="text-frag-muted mt-2">Configure how FragDesk behaves.</p>
@@ -61,17 +61,17 @@ export default function SettingsPage() {
       )}
 
       {/* Recording */}
-      <section className="bg-frag-surface border border-frag-border rounded-lg p-6 space-y-3">
+      <section className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 space-y-3">
         <h2 className="text-lg font-semibold text-frag-text">Macro Recording</h2>
-        <p className="text-sm text-frag-muted">
+        <p className="text-sm text-frag-muted break-words">
           This hotkey starts and stops macro recording from anywhere, even while
           FragDesk isn't focused — without it, you'd have to click a button
           on-screen, which gets captured as part of the recording itself.
         </p>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm text-frag-muted">Record toggle:</span>
           {isCapturing ? (
-            <span className="font-mono text-sm text-frag-accent animate-pulse">
+            <span className="font-mono text-sm text-frag-accent animate-pulse break-words">
               Press a key combo... (Esc to cancel)
             </span>
           ) : (
@@ -87,14 +87,14 @@ export default function SettingsPage() {
       </section>
 
       {/* About */}
-      <section className="bg-frag-surface border border-frag-border rounded-lg p-6 space-y-2">
+      <section className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 space-y-2">
         <h2 className="text-lg font-semibold text-frag-text">About</h2>
         <div className="text-sm text-frag-muted space-y-1">
-          <p>
+          <p className="break-words">
             <span className="text-frag-text font-medium">FragDesk</span> — a gaming
             companion, productivity utility, and community fragment aggregator.
           </p>
-          <p>Version 0.1.0 · Alpha Build</p>
+          <p className="break-words">Version 0.1.0 · Alpha Build</p>
         </div>
       </section>
     </div>

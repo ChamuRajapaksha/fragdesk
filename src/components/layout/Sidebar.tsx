@@ -24,7 +24,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
   return (
     <div className="w-60 md:w-64 bg-frag-surface border-r border-frag-border h-screen flex flex-col">
       {/* Logo */}
-      <div className="p-6 border-b border-frag-border">
+      <div className="p-4 md:p-6 border-b border-frag-border">
         <h1 className="text-2xl font-bold text-frag-primary">
           Frag<span className="text-frag-accent">Desk</span>
         </h1>
@@ -70,7 +70,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
       {isSupabaseConfigured && !authLoading && (
         <button
           onClick={() => setActiveTab('community')}
-          className="mx-4 mb-2 px-3 py-2 rounded-lg bg-frag-bg hover:bg-frag-bg/70 border border-frag-border text-left transition-colors"
+          className="w-[calc(100%-2rem)] mx-4 mb-2 px-3 py-2 rounded-lg bg-frag-bg hover:bg-frag-bg/70 border border-frag-border text-left transition-colors"
         >
           {user ? (
             <>

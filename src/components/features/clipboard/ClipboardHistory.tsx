@@ -190,7 +190,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
   return (
     <div className="max-w-4xl">
       {/* Header */}
-      <div className="flex items-center justify-between gap-y-3 flex-wrap mb-6">
+      <div className="flex items-center justify-between gap-y-3 flex-wrap mb-4 md:mb-6">
         <div className="min-w-0">
           <h1 className="text-3xl font-bold text-frag-text mb-2">Clipboard Manager</h1>
           <p className="text-frag-muted">
@@ -237,7 +237,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
       )}
 
       {/* Search Bar */}
-      <div className="mb-6">
+      <div className="mb-4 md:mb-6">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-frag-muted" size={20} />
           <input
@@ -251,7 +251,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-2 md:gap-4 mb-4 md:mb-6">
         <div className="bg-frag-surface border border-frag-border rounded-lg p-4">
           <p className="text-frag-muted text-sm">Total Items</p>
           <p className="text-2xl font-bold text-frag-primary">{items.length}</p>
@@ -284,7 +284,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, x: -100 }}
                 transition={{ delay: index * 0.03 }}
-                className={`bg-frag-surface border rounded-lg p-4 hover:border-frag-primary/50 transition-all group ${
+                className={`bg-frag-surface border rounded-lg p-3 md:p-4 hover:border-frag-primary/50 transition-all group ${
                   item.is_pinned ? 'border-frag-accent' : 'border-frag-border'
                 }`}
               >

@@ -89,8 +89,8 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
   return (
     <div>
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-frag-text mb-2">
+      <div className="mb-6 md:mb-8">
+        <h1 className="text-3xl md:text-4xl font-bold text-frag-text mb-2">
           Welcome to FragDesk
         </h1>
         <p className="text-frag-muted text-lg">
@@ -99,9 +99,9 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 md:mb-8">
         <motion.div
-          className="bg-frag-surface border border-frag-border rounded-lg p-6 cursor-pointer"
+          className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 cursor-pointer"
           whileHover={{ y: -4 }}
           transition={{ type: 'spring', stiffness: 300 }}
           onClick={() => setActiveTab('clipboard')}
@@ -113,7 +113,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
         </motion.div>
 
         <motion.div
-          className="bg-frag-surface border border-frag-border rounded-lg p-6 cursor-pointer"
+          className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 cursor-pointer"
           whileHover={{ y: -4 }}
           transition={{ type: 'spring', stiffness: 300 }}
           onClick={() => setActiveTab('macros')}
@@ -125,7 +125,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
         </motion.div>
 
         <motion.div
-          className="bg-frag-surface border border-frag-border rounded-lg p-6 cursor-pointer"
+          className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 cursor-pointer"
           whileHover={{ y: -4 }}
           transition={{ type: 'spring', stiffness: 300 }}
           onClick={() => setActiveTab('monitor')}
@@ -151,9 +151,9 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
               transition={{ delay: index * 0.1 }}
               whileHover={{ x: 8 }}
               onClick={() => setActiveTab(feature.id)}
-              className="bg-frag-surface border border-frag-border rounded-lg p-6 flex items-center gap-6 cursor-pointer group"
+              className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 flex items-center gap-4 md:gap-6 cursor-pointer group"
             >
-              <div className={`${feature.bgColor} p-4 rounded-lg`}>
+              <div className={`${feature.bgColor} p-3 md:p-4 rounded-lg`}>
                 <Icon className={feature.color} size={32} />
               </div>
 
