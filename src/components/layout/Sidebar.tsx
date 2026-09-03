@@ -89,9 +89,9 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
           <div className="w-8 h-8 rounded-full bg-frag-primary/20 flex items-center justify-center">
             <span className="text-frag-primary text-sm font-bold">FD</span>
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-frag-text">v0.1.0</p>
-            <p className="text-xs text-frag-muted">Alpha Build</p>
+            <p className="text-xs truncate text-frag-muted">Alpha Build</p>
           </div>
         </div>
         <p className="text-xs text-frag-muted px-4">
