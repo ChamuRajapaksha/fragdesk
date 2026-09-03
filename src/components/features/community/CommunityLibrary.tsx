@@ -311,7 +311,7 @@ export default function CommunityLibrary() {
 
     if (!isSupabaseConfigured) {
         return (
-            <div className="min-h-full bg-[#0a0e27] text-white p-6 space-y-4">
+            <div className="min-h-full bg-[#0a0e27] text-white p-4 md:p-6 space-y-4">
                 <div>
                     <h1 className="text-2xl font-bold text-[#00d9ff]">Community Library</h1>
                     <p className="text-sm text-gray-400 mt-1">
@@ -333,9 +333,9 @@ export default function CommunityLibrary() {
     }
 
     return (
-        <div className="min-h-full bg-[#0a0e27] text-white p-6 space-y-6">
-            <div className="flex items-start justify-between">
-                <div>
+        <div className="min-h-full bg-[#0a0e27] text-white p-4 md:p-6 space-y-6">
+            <div className="flex flex-wrap items-start justify-between gap-y-3">
+                <div className="min-w-0">
                     <h1 className="text-2xl font-bold text-[#00d9ff]">Community Library</h1>
                     <p className="text-sm text-gray-400 mt-1">
                         Browse and import fragments shared by the community. Macros simulate real
@@ -436,10 +436,10 @@ export default function CommunityLibrary() {
                         return (
                             <div
                                 key={row.id}
-                                className="bg-[#141933] rounded-xl p-4 border border-white/5"
+                                className="bg-[#141933] rounded-xl p-3 md:p-4 border border-white/5"
                             >
-                                <div className="flex items-center justify-between">
-                                    <div>
+                                <div className="flex flex-wrap items-center justify-between gap-y-3">
+                                    <div className="min-w-0">
                                         <div className="flex items-center gap-2">
                                             <p className="font-medium">{row.name}</p>
                                             <span className="text-xs bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
