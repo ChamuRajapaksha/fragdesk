@@ -59,8 +59,8 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
                   transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                 />
               )}
-              <Icon size={20} />
-              <span className="font-medium">{item.label}</span>
+              <Icon size={20} className="shrink-0" />
+              <span className="font-medium min-w-0 truncate">{item.label}</span>
             </motion.button>
           );
         })}
