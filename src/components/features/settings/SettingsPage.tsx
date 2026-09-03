@@ -48,7 +48,7 @@ export default function SettingsPage() {
   }, [isCapturing]);
 
   return (
-    <div className="max-w-2xl w-full space-y-8">
+    <div className="max-w-2xl w-full space-y-6 md:space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-frag-text">Settings</h1>
         <p className="text-frag-muted mt-2">Configure how FragDesk behaves.</p>
@@ -61,7 +61,7 @@ export default function SettingsPage() {
       )}
 
       {/* Recording */}
-      <section className="bg-frag-surface border border-frag-border rounded-lg p-6 space-y-3">
+      <section className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 space-y-3">
         <h2 className="text-lg font-semibold text-frag-text">Macro Recording</h2>
         <p className="text-sm text-frag-muted break-words">
           This hotkey starts and stops macro recording from anywhere, even while
@@ -87,7 +87,7 @@ export default function SettingsPage() {
       </section>
 
       {/* About */}
-      <section className="bg-frag-surface border border-frag-border rounded-lg p-6 space-y-2">
+      <section className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 space-y-2">
         <h2 className="text-lg font-semibold text-frag-text">About</h2>
         <div className="text-sm text-frag-muted space-y-1">
           <p className="break-words">
