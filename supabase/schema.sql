@@ -35,6 +35,7 @@ alter table fragments enable row level security;
 -- operation before RLS is even evaluated.
 grant usage on schema public to anon, authenticated;
 grant select, insert on fragments to anon, authenticated;
+grant update, delete on fragments to authenticated;
 
 -- Anyone (using the app's anon key) can read every fragment. This is a
 -- public community library -- there's no private/unlisted concept yet.
@@ -68,13 +69,11 @@ create policy "Authenticated users can submit their own fragment"
     and submitted_by = auth.uid()
   );
 
--- Deliberately no UPDATE or DELETE policy yet. Without real user accounts,
--- there's no reliable way to prove "this is my fragment" to gate edits or
--- deletes -- under RLS, no policy means no access, so the table is
--- effectively append-only from the anon key. Moderation/removal for now
--- goes through the Supabase dashboard directly (which uses the
--- service_role key, bypassing RLS entirely -- never ship that key in the
--- app).
+-- UPDATE and DELETE policies are defined in supabase_auth_migration.sql
+-- (requires auth: submitted_by = auth.uid()). Moderation/removal for
+-- unowned rows still goes through the Supabase dashboard directly (which
+-- uses the service_role key, bypassing RLS entirely -- never ship that
+-- key in the app).
 
 -- download_count can't be incremented via a plain UPDATE (no policy
 -- allows it, deliberately -- see above). This function is a narrow,
