@@ -602,7 +602,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                     onClick={() => handleToggleRule(rule.id)}
                     className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${rule.enabled ? 'bg-frag-success' : 'bg-frag-border'}`}
                   >
-                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${rule.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${rule.enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
                   </button>
                   <div className="min-w-0">
                     <p className="text-sm text-frag-text font-medium truncate">{rule.name}</p>
