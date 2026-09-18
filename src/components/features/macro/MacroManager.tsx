@@ -508,21 +508,21 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             : macros.filter((m) => m.tags.some((t) => activeTagFilters.includes(t)));
 
     return (
-        <div className="min-h-full bg-[#0a0e27] text-white p-4 md:p-6 space-y-6">
+        <div className="min-h-full bg-frag-bg text-frag-text p-4 md:p-6 space-y-6">
             <div>
-                <h1 className="text-2xl font-bold text-[#00d9ff]">Macro Manager</h1>
-                <p className="text-sm text-gray-400 mt-1">
+                <h1 className="text-2xl font-bold text-frag-primary">Macro Manager</h1>
+                <p className="text-sm text-frag-muted mt-1">
                     Record keyboard and mouse input, then replay it anytime.
                 </p>
             </div>
 
             {hasPermission === false && (
-                <div className="bg-[#ff3366]/10 border border-[#ff3366]/40 text-sm rounded-lg px-4 py-3 space-y-1">
-                    <p className="font-medium text-[#ff3366]">Accessibility permission needed</p>
-                    <p className="text-gray-300">
+                <div className="bg-frag-danger/10 border border-frag-danger/40 text-sm rounded-lg px-4 py-3 space-y-1">
+                    <p className="font-medium text-frag-danger">Accessibility permission needed</p>
+                    <p className="text-frag-text">
                         FragDesk can't record keyboard or mouse input until it's granted
                         Accessibility access. Open{" "}
-                        <span className="font-mono text-gray-200">
+                        <span className="font-mono text-frag-text">
                             System Settings → Privacy &amp; Security → Accessibility
                         </span>
                         , enable FragDesk, then restart the app.
@@ -531,23 +531,23 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             )}
 
             {error && (
-                <div className="break-words bg-[#ff3366]/10 border border-[#ff3366]/40 text-[#ff3366] text-sm rounded-lg px-4 py-2">
+                <div className="break-words bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2">
                     {error}
                 </div>
             )}
 
             {/* Recording control */}
-            <div className="bg-[#141933] rounded-xl p-4 md:p-5 border border-white/5">
-                <p className="text-xs text-gray-500 mb-3">
+            <div className="bg-frag-surface rounded-xl p-4 md:p-5 border border-frag-border">
+                <p className="text-xs text-frag-muted mb-3">
                     Tip: press{" "}
                     {isCapturingRecordHotkey ? (
-                        <span className="font-mono text-[#b026ff] animate-pulse">
+                        <span className="font-mono text-frag-accent animate-pulse">
                             Press a key combo... (Esc to cancel)
                         </span>
                     ) : (
                         <button
                             onClick={() => setIsCapturingRecordHotkey(true)}
-                            className="font-mono text-[#00d9ff] hover:underline"
+                            className="font-mono text-frag-primary hover:underline"
                             title="Click to change"
                         >
                             {recordHotkey}
@@ -561,14 +561,14 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                         <div>
                             <div className="flex items-center gap-2">
                                 {isRecording && (
-                                    <span className="h-2.5 w-2.5 rounded-full bg-[#ff3366] animate-pulse" />
+                                    <span className="h-2.5 w-2.5 rounded-full bg-frag-danger animate-pulse" />
                                 )}
                                 <span className="font-medium">
                                     {isRecording ? "Recording..." : "Ready to record"}
                                 </span>
                             </div>
                             {isRecording && (
-                                <p className="text-sm text-gray-400 mt-1">
+                                <p className="text-sm text-frag-muted mt-1">
                                     {liveCount} event{liveCount === 1 ? "" : "s"} captured
                                 </p>
                             )}
@@ -577,8 +577,8 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                             onClick={isRecording ? handleStopRecording : handleStartRecording}
                             className={`px-5 py-2.5 rounded-lg font-medium transition-colors ${
                                 isRecording
-                                    ? "bg-[#ff3366] hover:bg-[#ff3366]/80 text-white"
-                                    : "bg-[#00d9ff] hover:bg-[#00d9ff]/80 text-[#0a0e27]"
+                                    ? "bg-frag-danger hover:bg-frag-danger/80 text-white"
+                                    : "bg-frag-primary hover:bg-frag-primary/80 text-frag-bg"
                             }`}
                         >
                             {isRecording ? "Stop Recording" : "Start Recording"}
@@ -588,7 +588,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                     <div className="space-y-3">
                         <div>
                             <p className="font-medium">Recording stopped</p>
-                            <p className="text-sm text-gray-400">
+                            <p className="text-sm text-frag-muted">
                                 {pendingPreview.event_count} events, {formatDuration(pendingPreview.duration_ms)}
                             </p>
                         </div>
@@ -600,18 +600,18 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                 onChange={(e) => setMacroName(e.target.value)}
                                 onKeyDown={(e) => e.key === "Enter" && handleSaveMacro()}
                                 placeholder="Name this macro..."
-                                className="flex-1 min-w-0 bg-[#0a0e27] border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#00d9ff]"
+                                className="flex-1 min-w-0 bg-frag-bg border border-frag-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-frag-primary"
                             />
                             <button
                                 onClick={handleSaveMacro}
                                 disabled={!macroName.trim()}
-                                className="px-4 py-2 rounded-lg bg-[#00ff88] text-[#0a0e27] font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="px-4 py-2 rounded-lg bg-frag-success text-frag-bg font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                                 Save
                             </button>
                             <button
                                 onClick={handleDiscardRecording}
-                                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 font-medium text-sm"
+                                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-frag-text font-medium text-sm"
                             >
                                 Discard
                             </button>
@@ -622,12 +622,12 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
 
             {/* Playback options */}
             <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
-                <label className="flex items-center gap-2 text-gray-400">
+                <label className="flex items-center gap-2 text-frag-muted">
                     Speed
                     <select
                         value={speed}
                         onChange={(e) => setSpeed(Number(e.target.value))}
-                        className="bg-[#141933] border border-white/10 rounded px-2 py-1 text-white"
+                        className="bg-frag-surface border border-frag-border rounded px-2 py-1 text-frag-text"
                     >
                         <option value={0.5}>0.5x</option>
                         <option value={1}>1x</option>
@@ -635,12 +635,12 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                         <option value={4}>4x</option>
                     </select>
                 </label>
-                <label className="flex items-center gap-2 text-gray-400">
+                <label className="flex items-center gap-2 text-frag-muted">
                     Repeat
                     <select
                         value={repeat}
                         onChange={(e) => setRepeat(Number(e.target.value))}
-                        className="bg-[#141933] border border-white/10 rounded px-2 py-1 text-white"
+                        className="bg-frag-surface border border-frag-border rounded px-2 py-1 text-frag-text"
                     >
                         <option value={1}>1x</option>
                         <option value={3}>3x</option>
@@ -653,7 +653,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             {/* Macro list */}
             <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-y-2">
-                    <h2 className="text-sm font-medium text-gray-400">Your macros</h2>
+                    <h2 className="text-sm font-medium text-frag-muted">Your macros</h2>
                     <div>
                         <input
                             ref={importFileInputRef}
@@ -664,7 +664,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                         />
                         <button
                             onClick={handleImportClick}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 font-medium"
+                            className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-frag-text font-medium"
                         >
                             Import macro
                         </button>
@@ -680,8 +680,8 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                     onClick={() => toggleTagFilter(tag)}
                                         className={`max-w-xs truncate text-xs px-2 py-1 rounded-full border transition-colors ${
                                         active
-                                            ? "bg-[#00d9ff]/15 border-[#00d9ff]/50 text-[#00d9ff]"
-                                            : "bg-white/5 border-white/10 text-gray-400 hover:text-gray-200"
+                                            ? "bg-frag-primary/15 border-frag-primary/50 text-frag-primary"
+                                            : "bg-white/5 border-frag-border text-frag-muted hover:text-frag-text"
                                     }`}
                                 >
                                     {tag}
@@ -691,7 +691,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                         {activeTagFilters.length > 0 && (
                             <button
                                 onClick={() => setActiveTagFilters([])}
-                                className="text-xs text-gray-500 hover:text-gray-300 ml-1"
+                                className="text-xs text-frag-muted hover:text-frag-text ml-1"
                             >
                                 clear filters
                             </button>
@@ -699,9 +699,9 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                     </div>
                 )}
                 {macros.length === 0 ? (
-                    <p className="text-gray-500 text-sm">No macros yet — record one above.</p>
+                    <p className="text-frag-muted text-sm">No macros yet — record one above.</p>
                 ) : visibleMacros.length === 0 ? (
-                    <p className="text-gray-500 text-sm">No macros match the selected tags.</p>
+                    <p className="text-frag-muted text-sm">No macros match the selected tags.</p>
                 ) : (
                     visibleMacros.map((m) => {
                         const isThisPlaying = playingId === m.id;
@@ -711,7 +711,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                         return (
                             <div
                                 key={m.id}
-                                className="bg-[#141933] rounded-xl p-4 border border-white/5 flex items-center justify-between"
+                                className="bg-frag-surface rounded-xl p-4 border border-frag-border flex items-center justify-between"
                             >
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
@@ -726,13 +726,13 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                                     if (e.key === "Escape") cancelRename();
                                                 }}
                                                 onBlur={commitRename}
-                                                className="min-w-0 w-full max-w-xs bg-[#0a0e27] border border-[#00d9ff] rounded px-2 py-1 text-sm focus:outline-none"
+                                                className="min-w-0 w-full max-w-xs bg-frag-bg border border-frag-primary rounded px-2 py-1 text-sm focus:outline-none"
                                             />
                                         ) : (
                                             <button
                                                 onClick={() => startRename(m)}
                                                 title="Click to rename"
-                                                className="min-w-0 truncate font-medium text-left hover:text-[#00d9ff] transition-colors"
+                                                className="min-w-0 truncate font-medium text-left hover:text-frag-primary transition-colors"
                                             >
                                                 {m.name}
                                             </button>
@@ -740,7 +740,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         {m.source === "community" && (
                                             <span
                                                 title="Imported from the Community Library — reviewed this before importing? Playing it simulates real input on your machine."
-                                                className="shrink-0 text-xs bg-[#ff3366]/10 text-[#ff3366] border border-[#ff3366]/30 rounded px-1.5 py-0.5"
+                                                className="shrink-0 text-xs bg-frag-danger/10 text-frag-danger border border-frag-danger/30 rounded px-1.5 py-0.5"
                                             >
                                                 community
                                             </span>
@@ -748,29 +748,29 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         {m.source === "starter" && (
                                             <span
                                                 title="Imported from FragDesk's bundled starter pack"
-                                                className="shrink-0 text-xs bg-white/5 text-gray-400 rounded px-1.5 py-0.5"
+                                                className="shrink-0 text-xs bg-white/5 text-frag-muted rounded px-1.5 py-0.5"
                                             >
                                                 starter
                                             </span>
                                         )}
                                     </div>
-                                    <p className="text-xs text-gray-500 mt-0.5">
+                                    <p className="text-xs text-frag-muted mt-0.5">
                                         {m.event_count} events · {formatDuration(m.duration_ms)} ·{" "}
                                         {formatDate(m.created_at)}
                                     </p>
                                     <div className="mt-1.5">
                                         {capturingHotkeyId === m.id ? (
-                                            <span className="text-xs text-[#b026ff] animate-pulse">
+                                            <span className="text-xs text-frag-accent animate-pulse">
                                                 Press a key combo... (Esc to cancel)
                                             </span>
                                         ) : m.hotkey ? (
                                             <span className="inline-flex items-center gap-1.5">
-                                                    <span className="break-words text-xs font-mono bg-[#b026ff]/15 text-[#b026ff] border border-[#b026ff]/30 rounded px-1.5 py-0.5">
+                                                    <span className="break-words text-xs font-mono bg-frag-accent/15 text-frag-accent border border-frag-accent/30 rounded px-1.5 py-0.5">
                                                     {m.hotkey.replace("CommandOrControl", "Ctrl")}
                                                 </span>
                                                 <button
                                                     onClick={() => handleClearHotkey(m.id)}
-                                                    className="text-xs text-gray-500 hover:text-[#ff3366]"
+                                                    className="text-xs text-frag-muted hover:text-frag-danger"
                                                 >
                                                     clear
                                                 </button>
@@ -778,7 +778,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         ) : (
                                             <button
                                                 onClick={() => setCapturingHotkeyId(m.id)}
-                                                className="text-xs text-gray-500 hover:text-[#00d9ff]"
+                                                className="text-xs text-frag-muted hover:text-frag-primary"
                                             >
                                                 + set hotkey
                                             </button>
@@ -788,12 +788,12 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         {m.tags.map((tag) => (
                                             <span
                                                 key={tag}
-                                                className="inline-flex items-center gap-1 text-xs bg-white/5 text-gray-300 rounded-full px-2 py-0.5"
+                                                className="inline-flex items-center gap-1 text-xs bg-white/5 text-frag-text rounded-full px-2 py-0.5"
                                             >
                                                 <span className="max-w-xs truncate">{tag}</span>
                                                 <button
                                                     onClick={() => handleRemoveTag(m, tag)}
-                                                    className="text-gray-500 hover:text-[#ff3366]"
+                                                    className="text-frag-muted hover:text-frag-danger"
                                                 >
                                                     ×
                                                 </button>
@@ -814,12 +814,12 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                                 }}
                                                 onBlur={() => handleAddTag(m)}
                                                 placeholder="tag name"
-                                                className="text-xs bg-[#0a0e27] border border-white/10 rounded-full px-2 py-0.5 w-24 focus:outline-none focus:border-[#00d9ff]"
+                                                className="text-xs bg-frag-bg border border-frag-border rounded-full px-2 py-0.5 w-24 focus:outline-none focus:border-frag-primary"
                                             />
                                         ) : (
                                             <button
                                                 onClick={() => setAddingTagToId(m.id)}
-                                                className="text-xs text-gray-500 hover:text-[#00d9ff]"
+                                                className="text-xs text-frag-muted hover:text-frag-primary"
                                             >
                                                 + tag
                                             </button>
@@ -829,14 +829,14 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         <div className="mt-2 w-full max-w-64">
                                             <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                                                 <div
-                                                    className="h-full bg-[#b026ff] transition-all"
+                                                    className="h-full bg-frag-accent transition-all"
                                                     style={{
                                                         width: `${(progress.current_index / progress.total) * 100}%`,
                                                     }}
                                                 />
                                             </div>
                                             {progress.repeat_total > 1 && (
-                                                <p className="text-xs text-gray-500 mt-1">
+                                                <p className="text-xs text-frag-muted mt-1">
                                                     Repeat {progress.repeat_index + 1} of {progress.repeat_total}
                                                 </p>
                                             )}
@@ -847,7 +847,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                     {isThisPlaying ? (
                                         <button
                                             onClick={handleStopPlayback}
-                                            className="px-3 py-1.5 rounded-lg bg-[#ff3366] hover:bg-[#ff3366]/80 text-white text-sm font-medium"
+                                            className="px-3 py-1.5 rounded-lg bg-frag-danger hover:bg-frag-danger/80 text-white text-sm font-medium"
                                         >
                                             Stop
                                         </button>
@@ -855,7 +855,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         <button
                                             onClick={() => handlePlay(m.id)}
                                             disabled={playingId !== null}
-                                            className="px-3 py-1.5 rounded-lg bg-[#00d9ff] hover:bg-[#00d9ff]/80 text-[#0a0e27] text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                                            className="px-3 py-1.5 rounded-lg bg-frag-primary hover:bg-frag-primary/80 text-frag-bg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                                         >
                                             Play
                                         </button>
@@ -863,12 +863,12 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                     <button
                                         onClick={() => handleExport(m)}
                                         disabled={isThisPlaying}
-                                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-frag-text text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                                     >
                                         Export
                                     </button>
                                     {sharedIds.has(m.id) ? (
-                                        <span className="px-3 py-1.5 rounded-lg bg-[#00ff88]/15 text-[#00ff88] border border-[#00ff88]/30 text-sm font-medium">
+                                        <span className="px-3 py-1.5 rounded-lg bg-frag-success/15 text-frag-success border border-frag-success/30 text-sm font-medium">
                                             Shared ✓
                                         </span>
                                     ) : (
@@ -878,8 +878,8 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                             title="Publishes this macro to the public Community Library"
                                             className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
                                                 confirmShareId === m.id
-                                                    ? "bg-[#b026ff] text-white"
-                                                    : "bg-white/5 hover:bg-white/10 text-gray-300"
+                                                    ? "bg-frag-accent text-white"
+                                                    : "bg-white/5 hover:bg-white/10 text-frag-text"
                                             }`}
                                         >
                                             {sharingId === m.id
@@ -894,8 +894,8 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         disabled={isThisPlaying}
                                         className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
                                             isConfirmingDelete
-                                                ? "bg-[#ff3366] text-white"
-                                                : "bg-white/5 hover:bg-white/10 text-gray-300"
+                                                ? "bg-frag-danger text-white"
+                                                : "bg-white/5 hover:bg-white/10 text-frag-text"
                                         }`}
                                     >
                                         {isConfirmingDelete ? "Confirm?" : "Delete"}
