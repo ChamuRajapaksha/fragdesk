@@ -1,17 +1,37 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { applyPalette, PALETTES, type Palette } from '../../../themes';
 
 export default function SettingsPage() {
   const [recordHotkey, setRecordHotkey] = useState<string>('F9');
   const [isCapturing, setIsCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [paletteId, setPaletteId] = useState<string>('neon');
+  const [paletteSaved, setPaletteSaved] = useState(false);
 
   useEffect(() => {
     invoke<string>('get_record_hotkey')
       .then(setRecordHotkey)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    invoke<string>('get_ui_theme')
+      .then(setPaletteId)
+      .catch(() => {});
+  }, []);
+
+  function selectPalette(palette: Palette) {
+    applyPalette(palette);
+    setPaletteId(palette.id);
+    invoke('set_ui_theme', { theme: palette.id })
+      .then(() => {
+        setPaletteSaved(true);
+        setTimeout(() => setPaletteSaved(false), 2000);
+      })
+      .catch((err) => setError(String(err)));
+  }
 
   useEffect(() => {
     if (!isCapturing) return;
@@ -84,6 +104,55 @@ export default function SettingsPage() {
           )}
           {saved && <span className="text-xs text-frag-success">Saved ✓</span>}
         </div>
+      </section>
+
+      {/* Appearance / Colour Palette */}
+      <section className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 space-y-3">
+        <h2 className="text-lg font-semibold text-frag-text">Appearance / Colour Palette</h2>
+        <p className="text-sm text-frag-muted">
+          Pick how FragDesk is coloured. The palette applies across the whole app and is saved
+          automatically.
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {PALETTES.map((palette) => {
+            const selected = palette.id === paletteId;
+            return (
+              <button
+                key={palette.id}
+                onClick={() => selectPalette(palette)}
+                aria-pressed={selected}
+                className={`text-left rounded-lg p-3 border transition-colors ${
+                  selected
+                    ? 'border-frag-primary ring-1 ring-frag-primary'
+                    : 'border-frag-border hover:border-frag-primary/60'
+                }`}
+              >
+                <div className="flex gap-1.5 mb-2">
+                  <span
+                    className="h-5 w-5 rounded-full border border-white/15"
+                    style={{ backgroundColor: `rgb(${palette.colors.bg})` }}
+                  />
+                  <span
+                    className="h-5 w-5 rounded-full"
+                    style={{ backgroundColor: `rgb(${palette.colors.primary})` }}
+                  />
+                  <span
+                    className="h-5 w-5 rounded-full"
+                    style={{ backgroundColor: `rgb(${palette.colors.accent})` }}
+                  />
+                </div>
+                <span
+                  className={`text-sm font-medium ${
+                    selected ? 'text-frag-primary' : 'text-frag-text'
+                  }`}
+                >
+                  {palette.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {paletteSaved && <span className="text-xs text-frag-success">Saved ✓</span>}
       </section>
 
       {/* About */}
