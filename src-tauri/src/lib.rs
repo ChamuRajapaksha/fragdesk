@@ -27,6 +27,8 @@ use commands::monitor_layout::{
 
 use commands::onboarding::{has_completed_onboarding, mark_onboarding_completed};
 
+use commands::theme::{get_ui_theme, set_ui_theme};
+
 use commands::fps::{
     get_fps_stats, list_rtss_apps, set_fps_tracking_target, FpsMonitorState,
 };
@@ -152,6 +154,9 @@ pub fn run() {
             // Onboarding commands
             has_completed_onboarding,
             mark_onboarding_completed,
+            // Theme commands
+            get_ui_theme,
+            set_ui_theme,
             // FPS commands
             get_fps_stats,
             list_rtss_apps,
