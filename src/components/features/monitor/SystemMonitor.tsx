@@ -648,15 +648,15 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
           <AreaChart data={history}>
             <defs>
               <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#00d9ff" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#00d9ff" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--frag-primary)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="var(--frag-primary)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-            <XAxis dataKey="time" stroke="#71717a" tick={{ fill: '#71717a' }} tickLine={{ stroke: '#71717a' }} />
-            <YAxis stroke="#71717a" tick={{ fill: '#71717a' }} tickLine={{ stroke: '#71717a' }} domain={[0, 100]} />
-            <Tooltip contentStyle={{ backgroundColor: '#141933', border: '1px solid #1e293b', borderRadius: '8px', color: '#e4e4e7' }} />
-            <Area type="monotone" dataKey="cpu" stroke="#00d9ff" strokeWidth={2} fill="url(#cpuGradient)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--frag-border)" />
+            <XAxis dataKey="time" stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} />
+            <YAxis stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} domain={[0, 100]} />
+            <Tooltip contentStyle={{ backgroundColor: 'var(--frag-surface)', border: '1px solid var(--frag-border)', borderRadius: '8px', color: 'var(--frag-text)' }} />
+            <Area type="monotone" dataKey="cpu" stroke="var(--frag-primary)" strokeWidth={2} fill="url(#cpuGradient)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -672,15 +672,15 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
           <AreaChart data={history}>
             <defs>
               <linearGradient id="ramGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#b026ff" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#b026ff" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--frag-accent)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="var(--frag-accent)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-            <XAxis dataKey="time" stroke="#71717a" tick={{ fill: '#71717a' }} tickLine={{ stroke: '#71717a' }} />
-            <YAxis stroke="#71717a" tick={{ fill: '#71717a' }} tickLine={{ stroke: '#71717a' }} domain={[0, 100]} />
-            <Tooltip contentStyle={{ backgroundColor: '#141933', border: '1px solid #1e293b', borderRadius: '8px', color: '#e4e4e7' }} />
-            <Area type="monotone" dataKey="ram" stroke="#b026ff" strokeWidth={2} fill="url(#ramGradient)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--frag-border)" />
+            <XAxis dataKey="time" stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} />
+            <YAxis stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} domain={[0, 100]} />
+            <Tooltip contentStyle={{ backgroundColor: 'var(--frag-surface)', border: '1px solid var(--frag-border)', borderRadius: '8px', color: 'var(--frag-text)' }} />
+            <Area type="monotone" dataKey="ram" stroke="var(--frag-accent)" strokeWidth={2} fill="url(#ramGradient)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>

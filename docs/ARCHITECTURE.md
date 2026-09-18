@@ -331,19 +331,34 @@ git push origin feature/your-feature-name
 ## 🎨 UI Design System
 
 ### **Colors**
+The `frag.*` Tailwind tokens resolve to CSS custom properties at runtime, so
+the palette can be switched live. `src/App.css` defines the `:root` defaults
+(space-separated RGB triplets), `src/themes.ts` holds the curated palettes
+and `applyPalette()`, and Tauri commands `get_ui_theme` / `set_ui_theme`
+persist the chosen palette id in the settings table.
+
 ```typescript
 // tailwind.config.js
 colors: {
   frag: {
-    bg: '#0a0e27',        // Dark navy background
-    surface: '#141933',   // Slightly lighter surface
-    primary: '#00d9ff',   // Cyan accent
-    accent: '#b026ff',    // Purple accent
-    danger: '#ff3366',    // Red for alerts
-    success: '#00ff88',   // Green for success
-    text: '#e4e4e7',      // Light text
-    muted: '#71717a',     // Muted text
+    bg: 'rgb(var(--frag-bg) / <alpha-value>)',        // Dark navy background
+    surface: 'rgb(var(--frag-surface) / <alpha-value>)', // Slightly lighter surface
+    primary: 'rgb(var(--frag-primary) / <alpha-value>)',  // Cyan accent
+    accent: 'rgb(var(--frag-accent) / <alpha-value>)',    // Purple accent
+    danger: 'rgb(var(--frag-danger) / <alpha-value>)',    // Red for alerts
+    success: 'rgb(var(--frag-success) / <alpha-value>)',  // Green for success
+    text: 'rgb(var(--frag-text) / <alpha-value>)',        // Light text
+    muted: 'rgb(var(--frag-muted) / <alpha-value>)',      // Muted text
   }
+}
+```
+
+```css
+/* src/App.css */
+:root {
+  --frag-bg: 10 14 39;
+  --frag-primary: 0 217 255;
+  /* ... full default palette */
 }
 ```
 

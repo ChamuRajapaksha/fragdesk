@@ -8,16 +8,16 @@ export default {
     extend: {
       colors: {
         frag: {
-          bg: '#0a0e27',
-          surface: '#141933',
-          border: '#1e293b',
-          primary: '#00d9ff',
-          accent: '#b026ff',
-          danger: '#ff3366',
-          success: '#00ff88',
-          warning: '#fbbf24',
-          text: '#e4e4e7',
-          muted: '#71717a',
+          bg: 'rgb(var(--frag-bg) / <alpha-value>)',
+          surface: 'rgb(var(--frag-surface) / <alpha-value>)',
+          border: 'rgb(var(--frag-border) / <alpha-value>)',
+          primary: 'rgb(var(--frag-primary) / <alpha-value>)',
+          accent: 'rgb(var(--frag-accent) / <alpha-value>)',
+          danger: 'rgb(var(--frag-danger) / <alpha-value>)',
+          success: 'rgb(var(--frag-success) / <alpha-value>)',
+          warning: 'rgb(var(--frag-warning) / <alpha-value>)',
+          text: 'rgb(var(--frag-text) / <alpha-value>)',
+          muted: 'rgb(var(--frag-muted) / <alpha-value>)',
         }
       },
       animation: {
@@ -25,8 +25,8 @@ export default {
       },
       keyframes: {
         glow: {
-          '0%': { boxShadow: '0 0 5px #00d9ff' },
-          '100%': { boxShadow: '0 0 20px #00d9ff, 0 0 30px #00d9ff' },
+          '0%': { boxShadow: '0 0 5px var(--frag-primary)' },
+          '100%': { boxShadow: '0 0 20px var(--frag-primary), 0 0 30px var(--frag-primary)' },
         }
       }
     },

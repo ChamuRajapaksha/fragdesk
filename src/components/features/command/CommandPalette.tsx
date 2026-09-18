@@ -115,7 +115,7 @@ export default function CommandPalette({ setActiveTab }: CommandPaletteProps) {
             onClick={() => setIsOpen(false)}
         >
             <div
-                className="bg-[#141933] border border-white/10 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden"
+                className="bg-frag-surface border border-white/10 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
             >
                 <input
@@ -141,7 +141,7 @@ export default function CommandPalette({ setActiveTab }: CommandPaletteProps) {
                                 onMouseEnter={() => setSelectedIndex(i)}
                                 className={`w-full flex items-center justify-between px-4 py-2 text-sm text-left transition-colors ${
                                     i === selectedIndex
-                                        ? "bg-[#00d9ff]/10 text-[#00d9ff]"
+                                        ? "bg-frag-primary/10 text-frag-primary"
                                         : "text-gray-300"
                                 }`}
                             >

@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { applyPaletteById } from './themes';
 import './App.css';
 import MainLayout from './components/layout/MainLayout';
 import DashboardHome from './components/dashboard/DashboardHome';
@@ -13,6 +15,14 @@ import OnboardingTour from './components/features/onboarding/OnboardingTour';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  // Restore the persisted palette (if any) before first paint settles;
+  // the default palette already matches :root so a miss is a no-op.
+  useEffect(() => {
+    invoke<string>('get_ui_theme')
+      .then(applyPaletteById)
+      .catch(() => {});
+  }, []);
 
   const renderContent = () => {
     switch (activeTab) {
