@@ -33,5 +33,9 @@ uuid = { version = "1", features = ["v4"] }
 tauri-plugin-global-shortcut = "2"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_System_Com",
     "Win32_System_Memory",
+    "Win32_System_Performance",
 ] }
