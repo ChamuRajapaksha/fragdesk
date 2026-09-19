@@ -1,6 +1,7 @@
 mod database;
 mod commands;
 mod fragments;
+mod gpu;
 mod rtss;
 
 use commands::clipboard::{
