@@ -31,7 +31,8 @@ mod windows_impl {
     use super::GpuStats;
     use windows::core::Interface;
     use windows::Win32::Graphics::Dxgi::{
-        CreateDXGIFactory2, DXGI_ADAPTER_DESC1, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIAdapter1,
+        CreateDXGIFactory2, DXGI_ADAPTER_DESC1, DXGI_ADAPTER_FLAG_SOFTWARE,
+        DXGI_MEMORY_SEGMENT_GROUP_LOCAL, DXGI_QUERY_VIDEO_MEMORY_INFO, IDXGIAdapter1,
         IDXGIAdapter3, IDXGIFactory4,
     };
 
@@ -93,6 +94,16 @@ mod windows_impl {
         }
         let name = wide_to_string(&desc1.Description).to_ascii_lowercase();
         name.starts_with("microsoft")
+    }
+
+    /// Dedicated (local) VRAM used/total via `QueryVideoMemoryInfo`.
+    /// `Budget` is the amount of local memory this process may use,
+    /// which tracks the adapter's dedicated VRAM total.
+    fn query_vram(adapter: &IDXGIAdapter3) -> Result<(u64, u64), String> {
+        let mut info = DXGI_QUERY_VIDEO_MEMORY_INFO::default();
+        unsafe { adapter.QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &mut info) }
+            .map_err(|e| format!("failed to query video memory info: {e}"))?;
+        Ok((info.CurrentUsage, info.Budget))
     }
 
     fn wide_to_string(wide: &[u16]) -> String {
