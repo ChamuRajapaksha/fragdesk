@@ -775,6 +775,30 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       </div>
     ),
 
+    gpu_graph: (
+      <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
+        <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
+          <Gpu className="text-frag-warning" size={20} />
+          GPU Usage Over Time
+        </h3>
+        <ResponsiveContainer width="100%" height={250}>
+          <AreaChart data={history}>
+            <defs>
+              <linearGradient id="gpuGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--frag-warning)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="var(--frag-warning)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--frag-border)" />
+            <XAxis dataKey="time" stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} />
+            <YAxis stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} domain={[0, 100]} />
+            <Tooltip contentStyle={{ backgroundColor: 'var(--frag-surface)', border: '1px solid var(--frag-border)', borderRadius: '8px', color: 'var(--frag-text)' }} />
+            <Area type="monotone" dataKey="gpu" stroke="var(--frag-warning)" strokeWidth={2} fill="url(#gpuGradient)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    ),
+
     fps: (
       <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
         <div className="flex items-center justify-between mb-4 gap-2">
