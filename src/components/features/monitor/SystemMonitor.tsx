@@ -67,10 +67,11 @@ interface GpuStats {
 }
 
 const WIDGET_LABELS: Record<string, string> = {
-  stats: 'Stats Cards (CPU, RAM, Status)',
+  stats: 'Stats Cards (CPU, RAM, GPU, Status)',
   alerts: 'Alert Rules Panel',
   cpu_graph: 'CPU Usage Graph',
   ram_graph: 'RAM Usage Graph',
+  gpu_graph: 'GPU Usage Graph',
   fps: 'FPS / 1% Lows (via RTSS)',
 };
 
@@ -248,6 +249,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         { id: 'alerts', visible: true },
         { id: 'cpu_graph', visible: true },
         { id: 'ram_graph', visible: true },
+        { id: 'gpu_graph', visible: true },
         { id: 'fps', visible: true },
       ];
       const applied = await invoke<WidgetConfig[]>('set_monitor_layout', { widgets: defaults });
