@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { motion } from 'framer-motion';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { Cpu, MemoryStick, Activity, Bell, X, LayoutGrid, ArrowUp, ArrowDown, Eye, EyeOff, Gauge } from 'lucide-react';
+import { Cpu, MemoryStick, Activity, Bell, X, LayoutGrid, ArrowUp, ArrowDown, Eye, EyeOff, Gauge, Gpu } from 'lucide-react';
 import { extractErrorMessage, isSupabaseConfigured, supabase } from '../../../community/supabaseClient';
 import { useAuth } from '../../../community/useAuth';
 
@@ -22,6 +22,7 @@ interface DataPoint {
   time: string;
   cpu: number;
   ram: number;
+  gpu?: number;
 }
 
 interface AlertRule {
@@ -55,6 +56,14 @@ interface FpsStats {
   avg_fps: number;
   one_percent_low_fps: number;
   sample_count: number;
+}
+
+interface GpuStats {
+  name: string;
+  usage_percent: number;
+  memory_used: number;
+  memory_total: number;
+  memory_percent: number;
 }
 
 const WIDGET_LABELS: Record<string, string> = {
@@ -97,8 +106,14 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   const [showAppPicker, setShowAppPicker] = useState(false);
   const [loadingApps, setLoadingApps] = useState(false);
 
+  // GPU utilization / VRAM
+  const [gpuStats, setGpuStats] = useState<GpuStats | null>(null);
+
   const triggeredRef = useRef<Set<string>>(new Set());
   const rulesRef = useRef<AlertRule[]>([]);
+  // Mirror of gpuStats that the 1s polling closure can read without
+  // stale-state issues (the interval captures the first render's state).
+  const gpuStatsRef = useRef<GpuStats | null>(null);
 
   useEffect(() => {
     loadStats();
@@ -108,6 +123,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     setIsMonitoring(true);
     const interval = setInterval(() => {
       loadStats();
+      loadGpuStats();
       loadFpsStats();
     }, 1000);
 
@@ -145,6 +161,16 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       setFpsStats(stats);
     } catch (err) {
       console.error('Failed to load FPS stats:', err);
+    }
+  }
+
+  async function loadGpuStats() {
+    try {
+      const stats = await invoke<GpuStats | null>('get_gpu_stats');
+      setGpuStats(stats);
+      gpuStatsRef.current = stats;
+    } catch (err) {
+      console.error('Failed to load GPU stats:', err);
     }
   }
 
@@ -433,7 +459,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   const widgetContent: Record<string, ReactNode> = {
     stats: (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <motion.div
           className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
           whileHover={{ y: -4 }}
@@ -495,6 +521,64 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
             />
           </div>
         </motion.div>
+
+        {gpuStats ? (
+          <motion.div
+            className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
+            whileHover={{ y: -4 }}
+            transition={{ type: 'spring', stiffness: 300 }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-3 bg-frag-warning/10 rounded-lg shrink-0">
+                  <Gpu className="text-frag-warning" size={24} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-frag-muted text-sm">GPU Usage</p>
+                  <p className="text-xs text-frag-muted truncate">{gpuStats.name}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-end gap-2">
+              <p className="text-4xl font-bold text-frag-warning">{gpuStats.usage_percent.toFixed(1)}</p>
+              <p className="text-frag-muted text-xl mb-1">%</p>
+            </div>
+            <div className="mt-2">
+              <p className="text-xs text-frag-muted truncate">
+                {formatBytes(gpuStats.memory_used)} / {formatBytes(gpuStats.memory_total)} VRAM
+              </p>
+            </div>
+            <div className="mt-2 h-2 bg-frag-bg rounded-full overflow-hidden">
+              <motion.div
+                className="h-full bg-frag-warning"
+                initial={{ width: 0 }}
+                animate={{ width: `${gpuStats.usage_percent}%` }}
+                transition={{ duration: 0.5 }}
+              />
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
+            whileHover={{ y: -4 }}
+            transition={{ type: 'spring', stiffness: 300 }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-frag-warning/10 rounded-lg">
+                  <Gpu className="text-frag-warning/60" size={24} />
+                </div>
+                <div>
+                  <p className="text-frag-muted text-sm">GPU Usage</p>
+                  <p className="text-xs text-frag-muted">No GPU detected</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-end gap-2">
+              <p className="text-2xl font-bold text-frag-muted">N/A</p>
+            </div>
+          </motion.div>
+        )}
 
         <motion.div
           className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
