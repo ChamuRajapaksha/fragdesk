@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { applyPalette, PALETTES, type Palette } from '../../../themes';
+import { useToast } from '../../../components/ui';
 
 export default function SettingsPage() {
+  const { toast } = useToast();
   const [recordHotkey, setRecordHotkey] = useState<string>('F9');
   const [isCapturing, setIsCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [paletteId, setPaletteId] = useState<string>('neon');
-  const [paletteSaved, setPaletteSaved] = useState(false);
 
   useEffect(() => {
     invoke<string>('get_record_hotkey')
@@ -26,11 +26,8 @@ export default function SettingsPage() {
     applyPalette(palette);
     setPaletteId(palette.id);
     invoke('set_ui_theme', { theme: palette.id })
-      .then(() => {
-        setPaletteSaved(true);
-        setTimeout(() => setPaletteSaved(false), 2000);
-      })
-      .catch((err) => setError(String(err)));
+      .then(() => toast(`"${palette.name}" palette applied`, 'success'))
+      .catch((err) => toast(String(err), 'error'));
   }
 
   useEffect(() => {
@@ -52,14 +49,13 @@ export default function SettingsPage() {
       if (e.shiftKey) mods.push('Shift');
       const combo = [...mods, e.code].join('+');
 
-      setSaved(false);
+      setError(null);
       invoke('set_record_hotkey', { hotkey: combo })
         .then(() => {
           setRecordHotkey(combo);
-          setSaved(true);
-          setTimeout(() => setSaved(false), 2000);
+          toast(`Recording hotkey set to ${combo}`, 'success');
         })
-        .catch((err) => setError(String(err)))
+        .catch((err) => toast(String(err), 'error'))
         .finally(() => setIsCapturing(false));
     }
 
@@ -102,7 +98,6 @@ export default function SettingsPage() {
               {recordHotkey}
             </button>
           )}
-          {saved && <span className="text-xs text-frag-success">Saved ✓</span>}
         </div>
       </section>
 
@@ -129,7 +124,7 @@ export default function SettingsPage() {
               >
                 <div className="flex gap-1.5 mb-2">
                   <span
-                    className="h-5 w-5 rounded-full border border-white/15"
+                    className="h-5 w-5 rounded-full border border-frag-border"
                     style={{ backgroundColor: `rgb(${palette.colors.bg})` }}
                   />
                   <span
@@ -152,7 +147,6 @@ export default function SettingsPage() {
             );
           })}
         </div>
-        {paletteSaved && <span className="text-xs text-frag-success">Saved ✓</span>}
       </section>
 
       {/* About */}
