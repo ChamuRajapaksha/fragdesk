@@ -1,10 +1,11 @@
 import { ReactNode } from 'react';
 import Sidebar from './Sidebar';
+import type { NavId } from '../../features/registry';
 
 interface MainLayoutProps {
   children: ReactNode;
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
+  activeTab: NavId;
+  setActiveTab: (tab: NavId) => void;
 }
 
 export default function MainLayout({ children, activeTab, setActiveTab }: MainLayoutProps) {

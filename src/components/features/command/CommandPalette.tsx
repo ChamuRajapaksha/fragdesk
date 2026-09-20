@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import type { NavId } from "../../../features/registry";
 
 interface MacroSummary {
     id: string;
@@ -9,14 +10,14 @@ interface MacroSummary {
 }
 
 interface CommandPaletteProps {
-    setActiveTab: (tab: string) => void;
+    setActiveTab: (tab: NavId) => void;
 }
 
 type PaletteCommand =
-    | { kind: "nav"; id: string; label: string; hint: string }
+    | { kind: "nav"; id: NavId; label: string; hint: string }
     | { kind: "play-macro"; id: string; label: string; hint: string };
 
-const NAV_TARGETS: { id: string; label: string }[] = [
+const NAV_TARGETS: { id: NavId; label: string }[] = [
     { id: "dashboard", label: "Dashboard" },
     { id: "clipboard", label: "Clipboard" },
     { id: "macros", label: "Macro Manager" },
@@ -152,8 +153,8 @@ export default function CommandPalette({ setActiveTab }: CommandPaletteProps) {
                     )}
                 </div>
                 <div className="px-4 py-2 border-t border-white/10 text-xs text-gray-500 flex gap-3">
-                    <span>↑↓ navigate</span>
-                    <span>↵ select</span>
+                    <span>ΓåæΓåô navigate</span>
+                    <span>Γå╡ select</span>
                     <span>esc close</span>
                 </div>
             </div>

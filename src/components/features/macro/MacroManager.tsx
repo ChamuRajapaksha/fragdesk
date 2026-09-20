@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { extractErrorMessage, isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
 import { useAuth } from "../../../community/useAuth";
+import type { NavId } from "../../../features/registry";
 
 
 
@@ -47,7 +48,7 @@ function formatDate(unixSeconds: number): string {
     return new Date(unixSeconds * 1000).toLocaleString();
 }
 
-export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
+export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: NavId) => void }) {
     const [macros, setMacros] = useState<MacroSummary[]>([]);
     const [isRecording, setIsRecording] = useState(false);
     const [liveCount, setLiveCount] = useState(0);
@@ -83,7 +84,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
     const [recordHotkey, setRecordHotkey] = useState<string>("F9");
     const [isCapturingRecordHotkey, setIsCapturingRecordHotkey] = useState(false);
 
-    // macOS Accessibility permission — null while unchecked, so the banner
+    // macOS Accessibility permission ΓÇö null while unchecked, so the banner
     // doesn't flash on platforms where it's always true.
     const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
@@ -121,7 +122,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                 setIsRecording(false);
                 if (e.payload.event_count === 0) {
                     setError(
-                        "No input was captured — try again and press some keys or move the mouse"
+                        "No input was captured ΓÇö try again and press some keys or move the mouse"
                     );
                     return;
                 }
@@ -249,7 +250,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             const preview = await invoke<RecordingPreview>("stop_macro_recording");
             setIsRecording(false);
             if (preview.event_count === 0) {
-                setError("No input was captured — try again and press some keys or move the mouse");
+                setError("No input was captured ΓÇö try again and press some keys or move the mouse");
                 return;
             }
             setPendingPreview(preview);
@@ -329,14 +330,14 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
 
     function handleDeleteClick(id: string) {
         if (confirmDeleteId === id) {
-            // Second click within the window — actually delete.
+            // Second click within the window ΓÇö actually delete.
             if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
             setConfirmDeleteId(null);
             void handleDelete(id);
             return;
         }
 
-        // First click — arm confirmation, auto-reset after a few seconds
+        // First click ΓÇö arm confirmation, auto-reset after a few seconds
         // so a stray later click elsewhere doesn't leave it primed forever.
         setConfirmDeleteId(id);
         if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
@@ -355,7 +356,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
     function handleShareClick(id: string) {
         if (!isSupabaseConfigured) {
             setError(
-                "Community sharing isn't set up yet — add Supabase credentials to .env first."
+                "Community sharing isn't set up yet ΓÇö add Supabase credentials to .env first."
             );
             return;
         }
@@ -523,7 +524,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                         FragDesk can't record keyboard or mouse input until it's granted
                         Accessibility access. Open{" "}
                         <span className="font-mono text-frag-text">
-                            System Settings → Privacy &amp; Security → Accessibility
+                            System Settings ΓåÆ Privacy &amp; Security ΓåÆ Accessibility
                         </span>
                         , enable FragDesk, then restart the app.
                     </p>
@@ -553,7 +554,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                             {recordHotkey}
                         </button>
                     )}{" "}
-                    anywhere to start/stop instead of clicking below — clicking the button while
+                    anywhere to start/stop instead of clicking below ΓÇö clicking the button while
                     recording gets captured as part of the macro itself.
                 </p>
                 {!pendingPreview ? (
@@ -699,7 +700,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                     </div>
                 )}
                 {macros.length === 0 ? (
-                    <p className="text-frag-muted text-sm">No macros yet — record one above.</p>
+                    <p className="text-frag-muted text-sm">No macros yet ΓÇö record one above.</p>
                 ) : visibleMacros.length === 0 ? (
                     <p className="text-frag-muted text-sm">No macros match the selected tags.</p>
                 ) : (
@@ -739,7 +740,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         )}
                                         {m.source === "community" && (
                                             <span
-                                                title="Imported from the Community Library — reviewed this before importing? Playing it simulates real input on your machine."
+                                                title="Imported from the Community Library ΓÇö reviewed this before importing? Playing it simulates real input on your machine."
                                                 className="shrink-0 text-xs bg-frag-danger/10 text-frag-danger border border-frag-danger/30 rounded px-1.5 py-0.5"
                                             >
                                                 community
@@ -755,7 +756,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                         )}
                                     </div>
                                     <p className="text-xs text-frag-muted mt-0.5">
-                                        {m.event_count} events · {formatDuration(m.duration_ms)} ·{" "}
+                                        {m.event_count} events ┬╖ {formatDuration(m.duration_ms)} ┬╖{" "}
                                         {formatDate(m.created_at)}
                                     </p>
                                     <div className="mt-1.5">
@@ -795,7 +796,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                                     onClick={() => handleRemoveTag(m, tag)}
                                                     className="text-frag-muted hover:text-frag-danger"
                                                 >
-                                                    ×
+                                                    ├ù
                                                 </button>
                                             </span>
                                         ))}
@@ -869,7 +870,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                     </button>
                                     {sharedIds.has(m.id) ? (
                                         <span className="px-3 py-1.5 rounded-lg bg-frag-success/15 text-frag-success border border-frag-success/30 text-sm font-medium">
-                                            Shared ✓
+                                            Shared Γ£ô
                                         </span>
                                     ) : (
                                         <button

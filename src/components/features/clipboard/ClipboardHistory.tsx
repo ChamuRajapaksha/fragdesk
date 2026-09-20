@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, Pin, Trash2, Search, PlayCircle, StopCircle, Share2 } from 'lucide-react';
 import { extractErrorMessage, isSupabaseConfigured, supabase } from '../../../community/supabaseClient';
 import { useAuth } from '../../../community/useAuth';
+import type { NavId } from '../../../features/registry';
 
 interface ClipboardItem {
   id: number;
@@ -14,7 +15,7 @@ interface ClipboardItem {
 }
 
 interface ClipboardHistoryProps {
-  setActiveTab: (tab: string) => void;
+  setActiveTab: (tab: NavId) => void;
 }
 
 export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps) {
@@ -112,7 +113,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
 
   function handleShareClick(item: ClipboardItem) {
     if (!isSupabaseConfigured) {
-      setError("Community sharing isn't set up yet — add Supabase credentials to .env first.");
+      setError("Community sharing isn't set up yet ΓÇö add Supabase credentials to .env first.");
       return;
     }
     if (!user) {
@@ -195,7 +196,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
           <h1 className="text-3xl font-bold text-frag-text mb-2">Clipboard Manager</h1>
           <p className="text-frag-muted">
             {isMonitoring 
-              ? '🟢 Auto-monitoring clipboard changes' 
+              ? '≡ƒƒó Auto-monitoring clipboard changes' 
               : 'Click Start to automatically save clipboard changes'
             }
           </p>

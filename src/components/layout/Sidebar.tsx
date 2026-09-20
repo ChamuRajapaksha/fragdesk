@@ -2,13 +2,14 @@ import { motion } from 'framer-motion';
 import { Clipboard, Zap, Activity, Settings, Layers, Users } from 'lucide-react';
 import { useAuth } from '../../community/useAuth';
 import { isSupabaseConfigured } from '../../community/supabaseClient';
+import type { NavId } from '../../features/registry';
 
 interface SidebarProps {
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
+  activeTab: NavId;
+  setActiveTab: (tab: NavId) => void;
 }
 
-const menuItems = [
+const menuItems: { id: NavId; label: string; icon: typeof Layers }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: Layers },
   { id: 'clipboard', label: 'Clipboard', icon: Clipboard },
   { id: 'macros', label: 'Macros', icon: Zap },

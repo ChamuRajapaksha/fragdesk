@@ -1,13 +1,14 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+﻿import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { motion } from 'framer-motion';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { Cpu, MemoryStick, Activity, Bell, X, LayoutGrid, ArrowUp, ArrowDown, Eye, EyeOff, Gauge, Gpu } from 'lucide-react';
 import { extractErrorMessage, isSupabaseConfigured, supabase } from '../../../community/supabaseClient';
 import { useAuth } from '../../../community/useAuth';
+import type { NavId } from '../../../features/registry';
 
 interface SystemMonitorProps {
-  setActiveTab: (tab: string) => void;
+  setActiveTab: (tab: NavId) => void;
 }
 
 interface SystemStats {
@@ -261,7 +262,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   async function handleShareLayout() {
     if (!isSupabaseConfigured) {
-      setError("Community sharing isn't set up yet — add Supabase credentials to .env first.");
+      setError("Community sharing isn't set up yet ΓÇö add Supabase credentials to .env first.");
       return;
     }
     if (!user) {
@@ -406,7 +407,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   async function handleShareRule(rule: AlertRule) {
     if (!isSupabaseConfigured) {
-      setError("Community sharing isn't set up yet — add Supabase credentials to .env first.");
+      setError("Community sharing isn't set up yet ΓÇö add Supabase credentials to .env first.");
       return;
     }
     if (!user) {
@@ -710,7 +711,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {sharedRuleIds.has(rule.id) ? (
-                    <span className="text-xs text-frag-success">Shared ✓</span>
+                    <span className="text-xs text-frag-success">Shared Γ£ô</span>
                   ) : (
                     <button
                       onClick={() => handleShareRule(rule)}
@@ -827,7 +828,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
           <div>
             <p className="text-sm text-frag-muted mb-3 break-words">
               Requires RTSS (or MSI Afterburner) to be installed, running, and hooked into a
-              game. FragDesk reads RTSS's frame-timing data — it doesn't hook games directly.
+              game. FragDesk reads RTSS's frame-timing data ΓÇö it doesn't hook games directly.
             </p>
             <button
               onClick={handleOpenAppPicker}
@@ -926,7 +927,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         <div className="min-w-0">
           <h1 className="text-3xl font-bold text-frag-text mb-2 truncate">System Monitor</h1>
           <p className="text-frag-muted truncate">
-            {isMonitoring ? '🟢 Real-time system performance monitoring' : 'Monitoring paused'}
+            {isMonitoring ? '≡ƒƒó Real-time system performance monitoring' : 'Monitoring paused'}
           </p>
         </div>
         <button
@@ -964,7 +965,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
             </button>
             <div className="flex items-center gap-2 min-w-0">
               {layoutShared ? (
-                <span className="text-xs text-frag-success shrink-0">Shared ✓</span>
+                <span className="text-xs text-frag-success shrink-0">Shared Γ£ô</span>
               ) : (
                 <>
                   <input
