@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { extractErrorMessage, isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
@@ -84,7 +84,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
     const [recordHotkey, setRecordHotkey] = useState<string>("F9");
     const [isCapturingRecordHotkey, setIsCapturingRecordHotkey] = useState(false);
 
-    // macOS Accessibility permission ΓÇö null while unchecked, so the banner
+    // macOS Accessibility permission — null while unchecked, so the banner
     // doesn't flash on platforms where it's always true.
     const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
@@ -122,7 +122,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                 setIsRecording(false);
                 if (e.payload.event_count === 0) {
                     setError(
-                        "No input was captured ΓÇö try again and press some keys or move the mouse"
+                        "No input was captured — try again and press some keys or move the mouse"
                     );
                     return;
                 }
@@ -250,7 +250,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             const preview = await invoke<RecordingPreview>("stop_macro_recording");
             setIsRecording(false);
             if (preview.event_count === 0) {
-                setError("No input was captured ΓÇö try again and press some keys or move the mouse");
+                setError("No input was captured — try again and press some keys or move the mouse");
                 return;
             }
             setPendingPreview(preview);
@@ -330,14 +330,14 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
 
     function handleDeleteClick(id: string) {
         if (confirmDeleteId === id) {
-            // Second click within the window ΓÇö actually delete.
+            // Second click within the window — actually delete.
             if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
             setConfirmDeleteId(null);
             void handleDelete(id);
             return;
         }
 
-        // First click ΓÇö arm confirmation, auto-reset after a few seconds
+        // First click — arm confirmation, auto-reset after a few seconds
         // so a stray later click elsewhere doesn't leave it primed forever.
         setConfirmDeleteId(id);
         if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
@@ -356,7 +356,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
     function handleShareClick(id: string) {
         if (!isSupabaseConfigured) {
             setError(
-                "Community sharing isn't set up yet ΓÇö add Supabase credentials to .env first."
+                "Community sharing isn't set up yet — add Supabase credentials to .env first."
             );
             return;
         }
@@ -524,7 +524,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                         FragDesk can't record keyboard or mouse input until it's granted
                         Accessibility access. Open{" "}
                         <span className="font-mono text-frag-text">
-                            System Settings ΓåÆ Privacy &amp; Security ΓåÆ Accessibility
+                            System Settings → Privacy &amp; Security → Accessibility
                         </span>
                         , enable FragDesk, then restart the app.
                     </p>
@@ -554,7 +554,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                             {recordHotkey}
                         </button>
                     )}{" "}
-                    anywhere to start/stop instead of clicking below ΓÇö clicking the button while
+                    anywhere to start/stop instead of clicking below — clicking the button while
                     recording gets captured as part of the macro itself.
                 </p>
                 {!pendingPreview ? (
@@ -578,7 +578,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                             onClick={isRecording ? handleStopRecording : handleStartRecording}
                             className={`px-5 py-2.5 rounded-lg font-medium transition-colors ${
                                 isRecording
-                                    ? "bg-frag-danger hover:bg-frag-danger/80 text-white"
+                                    ? "bg-frag-danger hover:bg-frag-danger/80 text-frag-bg"
                                     : "bg-frag-primary hover:bg-frag-primary/80 text-frag-bg"
                             }`}
                         >
@@ -612,7 +612,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                             </button>
                             <button
                                 onClick={handleDiscardRecording}
-                                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-frag-text font-medium text-sm"
+                                className="px-4 py-2 rounded-lg bg-frag-border/40 hover:bg-frag-border/70 text-frag-text font-medium text-sm"
                             >
                                 Discard
                             </button>
@@ -665,7 +665,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                         />
                         <button
                             onClick={handleImportClick}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-frag-text font-medium"
+                            className="text-xs px-3 py-1.5 rounded-lg bg-frag-border/40 hover:bg-frag-border/70 text-frag-text font-medium"
                         >
                             Import macro
                         </button>
@@ -682,7 +682,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                         className={`max-w-xs truncate text-xs px-2 py-1 rounded-full border transition-colors ${
                                         active
                                             ? "bg-frag-primary/15 border-frag-primary/50 text-frag-primary"
-                                            : "bg-white/5 border-frag-border text-frag-muted hover:text-frag-text"
+                                            : "bg-frag-border/40 border-frag-border text-frag-muted hover:text-frag-text"
                                     }`}
                                 >
                                     {tag}
@@ -700,7 +700,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                     </div>
                 )}
                 {macros.length === 0 ? (
-                    <p className="text-frag-muted text-sm">No macros yet ΓÇö record one above.</p>
+                    <p className="text-frag-muted text-sm">No macros yet — record one above.</p>
                 ) : visibleMacros.length === 0 ? (
                     <p className="text-frag-muted text-sm">No macros match the selected tags.</p>
                 ) : (
@@ -740,7 +740,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                         )}
                                         {m.source === "community" && (
                                             <span
-                                                title="Imported from the Community Library ΓÇö reviewed this before importing? Playing it simulates real input on your machine."
+                                                title="Imported from the Community Library — reviewed this before importing? Playing it simulates real input on your machine."
                                                 className="shrink-0 text-xs bg-frag-danger/10 text-frag-danger border border-frag-danger/30 rounded px-1.5 py-0.5"
                                             >
                                                 community
@@ -749,14 +749,14 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                         {m.source === "starter" && (
                                             <span
                                                 title="Imported from FragDesk's bundled starter pack"
-                                                className="shrink-0 text-xs bg-white/5 text-frag-muted rounded px-1.5 py-0.5"
+                                                className="shrink-0 text-xs bg-frag-border/40 text-frag-muted rounded px-1.5 py-0.5"
                                             >
                                                 starter
                                             </span>
                                         )}
                                     </div>
                                     <p className="text-xs text-frag-muted mt-0.5">
-                                        {m.event_count} events ┬╖ {formatDuration(m.duration_ms)} ┬╖{" "}
+                                        {m.event_count} events · {formatDuration(m.duration_ms)} ·{" "}
                                         {formatDate(m.created_at)}
                                     </p>
                                     <div className="mt-1.5">
@@ -789,14 +789,14 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                         {m.tags.map((tag) => (
                                             <span
                                                 key={tag}
-                                                className="inline-flex items-center gap-1 text-xs bg-white/5 text-frag-text rounded-full px-2 py-0.5"
+                                                className="inline-flex items-center gap-1 text-xs bg-frag-border/40 text-frag-text rounded-full px-2 py-0.5"
                                             >
                                                 <span className="max-w-xs truncate">{tag}</span>
                                                 <button
                                                     onClick={() => handleRemoveTag(m, tag)}
                                                     className="text-frag-muted hover:text-frag-danger"
                                                 >
-                                                    ├ù
+                                                    ×
                                                 </button>
                                             </span>
                                         ))}
@@ -828,7 +828,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                     </div>
                                     {isThisPlaying && progress && (
                                         <div className="mt-2 w-full max-w-64">
-                                            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                            <div className="h-1.5 bg-frag-border/40 rounded-full overflow-hidden">
                                                 <div
                                                     className="h-full bg-frag-accent transition-all"
                                                     style={{
@@ -848,7 +848,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                     {isThisPlaying ? (
                                         <button
                                             onClick={handleStopPlayback}
-                                            className="px-3 py-1.5 rounded-lg bg-frag-danger hover:bg-frag-danger/80 text-white text-sm font-medium"
+                                            className="px-3 py-1.5 rounded-lg bg-frag-danger hover:bg-frag-danger/80 text-frag-bg text-sm font-medium"
                                         >
                                             Stop
                                         </button>
@@ -864,13 +864,13 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                     <button
                                         onClick={() => handleExport(m)}
                                         disabled={isThisPlaying}
-                                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-frag-text text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                                        className="px-3 py-1.5 rounded-lg bg-frag-border/40 hover:bg-frag-border/70 text-frag-text text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                                     >
                                         Export
                                     </button>
                                     {sharedIds.has(m.id) ? (
                                         <span className="px-3 py-1.5 rounded-lg bg-frag-success/15 text-frag-success border border-frag-success/30 text-sm font-medium">
-                                            Shared Γ£ô
+                                            Shared ✓
                                         </span>
                                     ) : (
                                         <button
@@ -879,8 +879,8 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                             title="Publishes this macro to the public Community Library"
                                             className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
                                                 confirmShareId === m.id
-                                                    ? "bg-frag-accent text-white"
-                                                    : "bg-white/5 hover:bg-white/10 text-frag-text"
+                                                    ? "bg-frag-accent text-frag-bg"
+                                                    : "bg-frag-border/40 hover:bg-frag-border/70 text-frag-text"
                                             }`}
                                         >
                                             {sharingId === m.id
@@ -895,8 +895,8 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                         disabled={isThisPlaying}
                                         className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
                                             isConfirmingDelete
-                                                ? "bg-frag-danger text-white"
-                                                : "bg-white/5 hover:bg-white/10 text-frag-text"
+                                                ? "bg-frag-danger text-frag-bg"
+                                                : "bg-frag-border/40 hover:bg-frag-border/70 text-frag-text"
                                         }`}
                                     >
                                         {isConfirmingDelete ? "Confirm?" : "Delete"}

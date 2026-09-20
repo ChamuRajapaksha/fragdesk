@@ -78,7 +78,7 @@ export default function FragmentLibrary() {
                         return (
                             <div
                                 key={f.filename}
-                                className="bg-frag-surface rounded-xl p-3 md:p-4 border border-white/5 flex flex-wrap items-center justify-between gap-y-3"
+                                className="bg-frag-surface rounded-xl p-3 md:p-4 border border-frag-border flex flex-wrap items-center justify-between gap-y-3"
                             >
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 min-w-0">
@@ -92,7 +92,7 @@ export default function FragmentLibrary() {
                                             {f.tags.map((tag) => (
                                                 <span
                                                     key={tag}
-                                                    className="text-xs bg-white/5 text-frag-muted rounded-full px-2 py-0.5 break-words"
+                                                    className="text-xs bg-frag-border/40 text-frag-muted rounded-full px-2 py-0.5 break-words"
                                                 >
                                                     {tag}
                                                 </span>

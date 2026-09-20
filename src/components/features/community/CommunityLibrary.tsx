@@ -318,7 +318,7 @@ export default function CommunityLibrary() {
                         Browse and import fragments shared by the community.
                     </p>
                 </div>
-                <div className="bg-frag-surface rounded-xl p-5 border border-white/5 text-sm text-frag-muted">
+                <div className="bg-frag-surface rounded-xl p-5 border border-frag-border text-sm text-frag-muted">
                     <p className="font-medium text-frag-text mb-1">Not set up yet</p>
                     <p>
                         The community library needs a Supabase project connected. Add{" "}
@@ -377,7 +377,7 @@ export default function CommunityLibrary() {
                         className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                             showOnlyMine
                                 ? "bg-frag-accent/15 border-frag-accent/50 text-frag-accent"
-                                : "bg-white/5 border-white/10 text-frag-muted hover:text-frag-text"
+                                : "bg-frag-border/40 border-frag-border text-frag-muted hover:text-frag-text"
                         }`}
                     >
                         My submissions
@@ -393,7 +393,7 @@ export default function CommunityLibrary() {
                                 className={`text-xs px-2 py-1 rounded-full border transition-colors ${
                                     active
                                         ? "bg-frag-primary/15 border-frag-primary/50 text-frag-primary"
-                                        : "bg-white/5 border-white/10 text-frag-muted hover:text-frag-text"
+                                        : "bg-frag-border/40 border-frag-border text-frag-muted hover:text-frag-text"
                                 }`}
                             >
                                 {tag}
@@ -436,7 +436,7 @@ export default function CommunityLibrary() {
                         return (
                             <div
                                 key={row.id}
-                                className="bg-frag-surface rounded-xl p-3 md:p-4 border border-white/5"
+                                className="bg-frag-surface rounded-xl p-3 md:p-4 border border-frag-border"
                             >
                                 <div className="flex flex-wrap items-center justify-between gap-y-3">
                                     <div className="min-w-0">
@@ -446,7 +446,7 @@ export default function CommunityLibrary() {
                                                 {TYPE_LABELS[row.fragment_type] ?? row.fragment_type}
                                             </span>
                                             {isOwner && (
-                                                <span className="text-xs bg-white/5 text-frag-muted rounded px-1.5 py-0.5">
+                                                <span className="text-xs bg-frag-border/40 text-frag-muted rounded px-1.5 py-0.5">
                                                     yours
                                                 </span>
                                             )}
@@ -460,7 +460,7 @@ export default function CommunityLibrary() {
                                                 isOwner ? (
                                                     <span
                                                         key={tag}
-                                                        className="inline-flex items-center gap-1 text-xs bg-white/5 text-frag-text rounded-full px-2 py-0.5"
+                                                        className="inline-flex items-center gap-1 text-xs bg-frag-border/40 text-frag-text rounded-full px-2 py-0.5"
                                                     >
                                                         {tag}
                                                         <button
@@ -473,7 +473,7 @@ export default function CommunityLibrary() {
                                                 ) : (
                                                     <span
                                                         key={tag}
-                                                        className="text-xs bg-white/5 text-frag-muted rounded-full px-2 py-0.5"
+                                                        className="text-xs bg-frag-border/40 text-frag-muted rounded-full px-2 py-0.5"
                                                     >
                                                         {tag}
                                                     </span>
@@ -495,7 +495,7 @@ export default function CommunityLibrary() {
                                                         }}
                                                         onBlur={() => handleAddTag(row)}
                                                         placeholder="tag name"
-                                                        className="text-xs bg-frag-bg border border-white/10 rounded-full px-2 py-0.5 w-24 focus:outline-none focus:border-frag-primary"
+                                                        className="text-xs bg-frag-bg border border-frag-border rounded-full px-2 py-0.5 w-24 focus:outline-none focus:border-frag-primary"
                                                     />
                                                 ) : (
                                                     <button
@@ -515,8 +515,8 @@ export default function CommunityLibrary() {
                                                 disabled={isDeleting}
                                                 className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 transition-colors ${
                                                     isConfirmingDelete
-                                                        ? "bg-frag-danger text-white"
-                                                        : "bg-white/5 hover:bg-white/10 text-frag-text"
+                                                        ? "bg-frag-danger text-frag-bg"
+                                                        : "bg-frag-border/40 hover:bg-frag-border/70 text-frag-text"
                                                 }`}
                                             >
                                                 {isDeleting
@@ -534,7 +534,7 @@ export default function CommunityLibrary() {
                                                 }
                                                 disabled={hasReported}
                                                 title={hasReported ? "You've already reported this" : "Report this fragment"}
-                                                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-frag-muted hover:text-frag-danger disabled:opacity-40 disabled:hover:text-frag-muted transition-colors"
+                                                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-frag-border/40 hover:bg-frag-border/70 text-frag-muted hover:text-frag-danger disabled:opacity-40 disabled:hover:text-frag-muted transition-colors"
                                             >
                                                 {hasReported ? "Reported" : "Report"}
                                             </button>
@@ -548,7 +548,7 @@ export default function CommunityLibrary() {
                                                 onClick={() =>
                                                     setPreviewOpenId(isPreviewOpen ? null : row.id)
                                                 }
-                                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-frag-text"
+                                                className="px-4 py-2 rounded-lg text-sm font-medium bg-frag-border/40 hover:bg-frag-border/70 text-frag-text"
                                             >
                                                 {isPreviewOpen ? "Hide preview" : "Preview"}
                                             </button>
@@ -557,7 +557,7 @@ export default function CommunityLibrary() {
                                 </div>
 
                                 {isReportOpen && (
-                                    <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
+                                    <div className="mt-3 pt-3 border-t border-frag-border space-y-2">
                                         <p className="text-xs text-frag-muted">Why are you reporting this?</p>
                                         <div className="flex flex-wrap gap-2">
                                             {REPORT_REASONS.map((r) => (
@@ -565,7 +565,7 @@ export default function CommunityLibrary() {
                                                     key={r.value}
                                                     onClick={() => handleSubmitReport(row, r.value)}
                                                     disabled={isSubmittingReport}
-                                                    className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-frag-danger/10 hover:text-frag-danger text-frag-text disabled:opacity-40 transition-colors"
+                                                    className="text-xs px-3 py-1.5 rounded-lg bg-frag-border/40 hover:bg-frag-danger/10 hover:text-frag-danger text-frag-text disabled:opacity-40 transition-colors"
                                                 >
                                                     {r.label}
                                                 </button>
@@ -581,7 +581,7 @@ export default function CommunityLibrary() {
                                 )}
 
                                 {isPreviewOpen && (
-                                    <div className="mt-3 pt-3 border-t border-white/5 space-y-3">
+                                    <div className="mt-3 pt-3 border-t border-frag-border space-y-3">
                                         {row.fragment_type === "macro" ? (
                                             stats ? (
                                                 <div className="text-sm text-frag-text space-y-1">
@@ -610,7 +610,7 @@ export default function CommunityLibrary() {
                                         ) : row.fragment_type === "clipboard_snippet" ? (
                                             <div className="text-sm text-frag-text">
                                                 <p className="text-xs text-frag-muted mb-1">Snippet content:</p>
-                                                <p className="bg-frag-bg border border-white/10 rounded-lg px-3 py-2 text-sm break-words whitespace-pre-wrap max-h-32 overflow-y-auto">
+                                                <p className="bg-frag-bg border border-frag-border rounded-lg px-3 py-2 text-sm break-words whitespace-pre-wrap max-h-32 overflow-y-auto">
                                                     {typeof row.payload === "object" &&
                                                     row.payload !== null &&
                                                     "content" in row.payload
@@ -641,7 +641,7 @@ export default function CommunityLibrary() {
                                                         );
                                                     }
                                                     return (
-                                                        <p className="bg-frag-bg border border-white/10 rounded-lg px-3 py-2 text-sm">
+                                                        <p className="bg-frag-bg border border-frag-border rounded-lg px-3 py-2 text-sm">
                                                             Notifies when{" "}
                                                             <span className="text-frag-primary">
                                                                 {p.metric.toUpperCase()}
@@ -677,7 +677,7 @@ export default function CommunityLibrary() {
                                                         ram_graph: "RAM Graph",
                                                     };
                                                     return (
-                                                        <ol className="bg-frag-bg border border-white/10 rounded-lg px-3 py-2 text-xs space-y-1 list-decimal pl-6">
+                                                        <ol className="bg-frag-bg border border-frag-border rounded-lg px-3 py-2 text-xs space-y-1 list-decimal pl-6">
                                                             {p.widgets.map((w) => (
                                                                 <li
                                                                     key={w.id}
@@ -721,7 +721,7 @@ export default function CommunityLibrary() {
                                             </button>
                                             <button
                                                 onClick={() => setPreviewOpenId(null)}
-                                                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-frag-text text-sm font-medium"
+                                                className="px-3 py-1.5 rounded-lg bg-frag-border/40 hover:bg-frag-border/70 text-frag-text text-sm font-medium"
                                             >
                                                 Cancel
                                             </button>

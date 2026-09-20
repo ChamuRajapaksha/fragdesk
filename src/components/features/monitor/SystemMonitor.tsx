@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { motion } from 'framer-motion';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
@@ -262,7 +262,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   async function handleShareLayout() {
     if (!isSupabaseConfigured) {
-      setError("Community sharing isn't set up yet ΓÇö add Supabase credentials to .env first.");
+      setError("Community sharing isn't set up yet — add Supabase credentials to .env first.");
       return;
     }
     if (!user) {
@@ -407,7 +407,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   async function handleShareRule(rule: AlertRule) {
     if (!isSupabaseConfigured) {
-      setError("Community sharing isn't set up yet ΓÇö add Supabase credentials to .env first.");
+      setError("Community sharing isn't set up yet — add Supabase credentials to .env first.");
       return;
     }
     if (!user) {
@@ -699,7 +699,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                     onClick={() => handleToggleRule(rule.id)}
                     className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${rule.enabled ? 'bg-frag-success' : 'bg-frag-border'}`}
                   >
-                    <span className={`absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${rule.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
+                    <span className={`absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-frag-text transition-transform ${rule.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
                   </button>
                   <div className="min-w-0">
                     <p className="text-sm text-frag-text font-medium truncate">{rule.name}</p>
@@ -711,7 +711,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {sharedRuleIds.has(rule.id) ? (
-                    <span className="text-xs text-frag-success">Shared Γ£ô</span>
+                    <span className="text-xs text-frag-success">Shared ✓</span>
                   ) : (
                     <button
                       onClick={() => handleShareRule(rule)}
@@ -828,7 +828,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
           <div>
             <p className="text-sm text-frag-muted mb-3 break-words">
               Requires RTSS (or MSI Afterburner) to be installed, running, and hooked into a
-              game. FragDesk reads RTSS's frame-timing data ΓÇö it doesn't hook games directly.
+              game. FragDesk reads RTSS's frame-timing data — it doesn't hook games directly.
             </p>
             <button
               onClick={handleOpenAppPicker}
@@ -927,7 +927,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         <div className="min-w-0">
           <h1 className="text-3xl font-bold text-frag-text mb-2 truncate">System Monitor</h1>
           <p className="text-frag-muted truncate">
-            {isMonitoring ? '≡ƒƒó Real-time system performance monitoring' : 'Monitoring paused'}
+            {isMonitoring ? '🟢 Real-time system performance monitoring' : 'Monitoring paused'}
           </p>
         </div>
         <button
@@ -965,7 +965,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
             </button>
             <div className="flex items-center gap-2 min-w-0">
               {layoutShared ? (
-                <span className="text-xs text-frag-success shrink-0">Shared Γ£ô</span>
+                <span className="text-xs text-frag-success shrink-0">Shared ✓</span>
               ) : (
                 <>
                   <input
@@ -997,7 +997,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                 <Bell size={16} className="shrink-0" />
                 {alert.message}
               </span>
-              <button onClick={() => dismissAlert(alert.ruleId)} className="hover:text-white shrink-0">
+              <button onClick={() => dismissAlert(alert.ruleId)} className="hover:text-frag-text shrink-0">
                 <X size={16} />
               </button>
             </div>
