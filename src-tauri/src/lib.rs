@@ -34,6 +34,8 @@ use commands::fps::{
     get_fps_stats, list_rtss_apps, set_fps_tracking_target, FpsMonitorState,
 };
 
+use commands::gpu::get_gpu_stats;
+
 use commands::monitor::{get_cpu_per_core, get_system_stats};
 use commands::permissions::check_recording_permission;
 use tauri::Manager;
@@ -121,6 +123,7 @@ pub fn run() {
             // Monitor commands
             get_system_stats,
             get_cpu_per_core,
+            get_gpu_stats,
             // Macro commands
             get_macros,
             start_macro_recording,
