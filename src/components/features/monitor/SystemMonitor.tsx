@@ -28,7 +28,7 @@ interface DataPoint {
 interface AlertRule {
   id: string;
   name: string;
-  metric: 'cpu' | 'ram';
+  metric: 'cpu' | 'ram' | 'gpu';
   comparison: 'above' | 'below';
   threshold: number;
   enabled: boolean;
@@ -84,7 +84,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [showRuleForm, setShowRuleForm] = useState(false);
   const [ruleName, setRuleName] = useState('');
-  const [ruleMetric, setRuleMetric] = useState<'cpu' | 'ram'>('cpu');
+  const [ruleMetric, setRuleMetric] = useState<'cpu' | 'ram' | 'gpu'>('cpu');
   const [ruleComparison, setRuleComparison] = useState<'above' | 'below'>('above');
   const [ruleThreshold, setRuleThreshold] = useState(90);
   const [error, setError] = useState<string | null>(null);
@@ -304,13 +304,16 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   }
 
   function evaluateRules(currentStats: SystemStats) {
-    const values: Record<'cpu' | 'ram', number> = {
+    const values: Record<'cpu' | 'ram' | 'gpu', number> = {
       cpu: currentStats.cpu_usage,
       ram: currentStats.ram_percent,
+      gpu: gpuStatsRef.current?.usage_percent ?? 0,
     };
 
     for (const rule of rulesRef.current) {
       if (!rule.enabled) continue;
+      // Never fire a GPU rule while no GPU is present/detected.
+      if (rule.metric === 'gpu' && !gpuStatsRef.current) continue;
       const value = values[rule.metric];
       const isTriggered =
         rule.comparison === 'above' ? value > rule.threshold : value < rule.threshold;
@@ -318,7 +321,8 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
       if (isTriggered && !wasTriggered) {
         triggeredRef.current.add(rule.id);
-        const metricLabel = rule.metric === 'cpu' ? 'CPU' : 'RAM';
+        const metricLabel =
+          rule.metric === 'cpu' ? 'CPU' : rule.metric === 'ram' ? 'RAM' : 'GPU';
         setFiredAlerts((prev) => [
           ...prev,
           {
@@ -647,11 +651,12 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
               <label className="text-xs text-frag-muted block mb-1">Metric</label>
               <select
                 value={ruleMetric}
-                onChange={(e) => setRuleMetric(e.target.value as 'cpu' | 'ram')}
+                onChange={(e) => setRuleMetric(e.target.value as 'cpu' | 'ram' | 'gpu')}
                 className="bg-frag-bg border border-frag-border rounded-lg px-3 py-1.5 text-sm text-frag-text"
               >
                 <option value="cpu">CPU</option>
                 <option value="ram">RAM</option>
+                <option value="gpu">GPU</option>
               </select>
             </div>
             <div>
