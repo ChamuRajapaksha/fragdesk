@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { motion } from 'framer-motion';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { Cpu, MemoryStick, Activity, Bell, X, LayoutGrid, ArrowUp, ArrowDown, Eye, EyeOff, Gauge } from 'lucide-react';
+import { Cpu, MemoryStick, Activity, Bell, X, LayoutGrid, ArrowUp, ArrowDown, Eye, EyeOff, Gauge, Gpu } from 'lucide-react';
 import { extractErrorMessage, isSupabaseConfigured, supabase } from '../../../community/supabaseClient';
 import { useAuth } from '../../../community/useAuth';
 
@@ -22,12 +22,13 @@ interface DataPoint {
   time: string;
   cpu: number;
   ram: number;
+  gpu?: number;
 }
 
 interface AlertRule {
   id: string;
   name: string;
-  metric: 'cpu' | 'ram';
+  metric: 'cpu' | 'ram' | 'gpu';
   comparison: 'above' | 'below';
   threshold: number;
   enabled: boolean;
@@ -57,11 +58,20 @@ interface FpsStats {
   sample_count: number;
 }
 
+interface GpuStats {
+  name: string;
+  usage_percent: number;
+  memory_used: number;
+  memory_total: number;
+  memory_percent: number;
+}
+
 const WIDGET_LABELS: Record<string, string> = {
-  stats: 'Stats Cards (CPU, RAM, Status)',
+  stats: 'Stats Cards (CPU, RAM, GPU, Status)',
   alerts: 'Alert Rules Panel',
   cpu_graph: 'CPU Usage Graph',
   ram_graph: 'RAM Usage Graph',
+  gpu_graph: 'GPU Usage Graph',
   fps: 'FPS / 1% Lows (via RTSS)',
 };
 
@@ -74,7 +84,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [showRuleForm, setShowRuleForm] = useState(false);
   const [ruleName, setRuleName] = useState('');
-  const [ruleMetric, setRuleMetric] = useState<'cpu' | 'ram'>('cpu');
+  const [ruleMetric, setRuleMetric] = useState<'cpu' | 'ram' | 'gpu'>('cpu');
   const [ruleComparison, setRuleComparison] = useState<'above' | 'below'>('above');
   const [ruleThreshold, setRuleThreshold] = useState(90);
   const [error, setError] = useState<string | null>(null);
@@ -97,8 +107,14 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   const [showAppPicker, setShowAppPicker] = useState(false);
   const [loadingApps, setLoadingApps] = useState(false);
 
+  // GPU utilization / VRAM
+  const [gpuStats, setGpuStats] = useState<GpuStats | null>(null);
+
   const triggeredRef = useRef<Set<string>>(new Set());
   const rulesRef = useRef<AlertRule[]>([]);
+  // Mirror of gpuStats that the 1s polling closure can read without
+  // stale-state issues (the interval captures the first render's state).
+  const gpuStatsRef = useRef<GpuStats | null>(null);
 
   useEffect(() => {
     loadStats();
@@ -108,6 +124,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     setIsMonitoring(true);
     const interval = setInterval(() => {
       loadStats();
+      loadGpuStats();
       loadFpsStats();
     }, 1000);
 
@@ -145,6 +162,16 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       setFpsStats(stats);
     } catch (err) {
       console.error('Failed to load FPS stats:', err);
+    }
+  }
+
+  async function loadGpuStats() {
+    try {
+      const stats = await invoke<GpuStats | null>('get_gpu_stats');
+      setGpuStats(stats);
+      gpuStatsRef.current = stats;
+    } catch (err) {
+      console.error('Failed to load GPU stats:', err);
     }
   }
 
@@ -222,6 +249,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         { id: 'alerts', visible: true },
         { id: 'cpu_graph', visible: true },
         { id: 'ram_graph', visible: true },
+        { id: 'gpu_graph', visible: true },
         { id: 'fps', visible: true },
       ];
       const applied = await invoke<WidgetConfig[]>('set_monitor_layout', { widgets: defaults });
@@ -276,13 +304,16 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   }
 
   function evaluateRules(currentStats: SystemStats) {
-    const values: Record<'cpu' | 'ram', number> = {
+    const values: Record<'cpu' | 'ram' | 'gpu', number> = {
       cpu: currentStats.cpu_usage,
       ram: currentStats.ram_percent,
+      gpu: gpuStatsRef.current?.usage_percent ?? 0,
     };
 
     for (const rule of rulesRef.current) {
       if (!rule.enabled) continue;
+      // Never fire a GPU rule while no GPU is present/detected.
+      if (rule.metric === 'gpu' && !gpuStatsRef.current) continue;
       const value = values[rule.metric];
       const isTriggered =
         rule.comparison === 'above' ? value > rule.threshold : value < rule.threshold;
@@ -290,7 +321,8 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
       if (isTriggered && !wasTriggered) {
         triggeredRef.current.add(rule.id);
-        const metricLabel = rule.metric === 'cpu' ? 'CPU' : 'RAM';
+        const metricLabel =
+          rule.metric === 'cpu' ? 'CPU' : rule.metric === 'ram' ? 'RAM' : 'GPU';
         setFiredAlerts((prev) => [
           ...prev,
           {
@@ -319,10 +351,15 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       });
 
       setHistory(prev => {
-        const newHistory = [
-          ...prev,
-          { time: timeStr, cpu: result.cpu_usage, ram: result.ram_percent }
-        ];
+        const point: DataPoint = {
+          time: timeStr,
+          cpu: result.cpu_usage,
+          ram: result.ram_percent,
+        };
+        if (gpuStatsRef.current) {
+          point.gpu = gpuStatsRef.current.usage_percent;
+        }
+        const newHistory = [...prev, point];
         return newHistory.slice(-60);
       });
     } catch (error) {
@@ -433,7 +470,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   const widgetContent: Record<string, ReactNode> = {
     stats: (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <motion.div
           className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
           whileHover={{ y: -4 }}
@@ -496,6 +533,64 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
           </div>
         </motion.div>
 
+        {gpuStats ? (
+          <motion.div
+            className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
+            whileHover={{ y: -4 }}
+            transition={{ type: 'spring', stiffness: 300 }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-3 bg-frag-warning/10 rounded-lg shrink-0">
+                  <Gpu className="text-frag-warning" size={24} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-frag-muted text-sm">GPU Usage</p>
+                  <p className="text-xs text-frag-muted truncate">{gpuStats.name}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-end gap-2">
+              <p className="text-4xl font-bold text-frag-warning">{gpuStats.usage_percent.toFixed(1)}</p>
+              <p className="text-frag-muted text-xl mb-1">%</p>
+            </div>
+            <div className="mt-2">
+              <p className="text-xs text-frag-muted truncate">
+                {formatBytes(gpuStats.memory_used)} / {formatBytes(gpuStats.memory_total)} VRAM
+              </p>
+            </div>
+            <div className="mt-2 h-2 bg-frag-bg rounded-full overflow-hidden">
+              <motion.div
+                className="h-full bg-frag-warning"
+                initial={{ width: 0 }}
+                animate={{ width: `${gpuStats.usage_percent}%` }}
+                transition={{ duration: 0.5 }}
+              />
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
+            whileHover={{ y: -4 }}
+            transition={{ type: 'spring', stiffness: 300 }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-frag-warning/10 rounded-lg">
+                  <Gpu className="text-frag-warning/60" size={24} />
+                </div>
+                <div>
+                  <p className="text-frag-muted text-sm">GPU Usage</p>
+                  <p className="text-xs text-frag-muted">No GPU detected</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-end gap-2">
+              <p className="text-2xl font-bold text-frag-muted">N/A</p>
+            </div>
+          </motion.div>
+        )}
+
         <motion.div
           className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
           whileHover={{ y: -4 }}
@@ -556,11 +651,12 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
               <label className="text-xs text-frag-muted block mb-1">Metric</label>
               <select
                 value={ruleMetric}
-                onChange={(e) => setRuleMetric(e.target.value as 'cpu' | 'ram')}
+                onChange={(e) => setRuleMetric(e.target.value as 'cpu' | 'ram' | 'gpu')}
                 className="bg-frag-bg border border-frag-border rounded-lg px-3 py-1.5 text-sm text-frag-text"
               >
                 <option value="cpu">CPU</option>
                 <option value="ram">RAM</option>
+                <option value="gpu">GPU</option>
               </select>
             </div>
             <div>
@@ -681,6 +777,30 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
             <YAxis stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} domain={[0, 100]} />
             <Tooltip contentStyle={{ backgroundColor: 'var(--frag-surface)', border: '1px solid var(--frag-border)', borderRadius: '8px', color: 'var(--frag-text)' }} />
             <Area type="monotone" dataKey="ram" stroke="var(--frag-accent)" strokeWidth={2} fill="url(#ramGradient)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    ),
+
+    gpu_graph: (
+      <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
+        <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
+          <Gpu className="text-frag-warning" size={20} />
+          GPU Usage Over Time
+        </h3>
+        <ResponsiveContainer width="100%" height={250}>
+          <AreaChart data={history}>
+            <defs>
+              <linearGradient id="gpuGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--frag-warning)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="var(--frag-warning)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--frag-border)" />
+            <XAxis dataKey="time" stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} />
+            <YAxis stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} domain={[0, 100]} />
+            <Tooltip contentStyle={{ backgroundColor: 'var(--frag-surface)', border: '1px solid var(--frag-border)', borderRadius: '8px', color: 'var(--frag-text)' }} />
+            <Area type="monotone" dataKey="gpu" stroke="var(--frag-warning)" strokeWidth={2} fill="url(#gpuGradient)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>
