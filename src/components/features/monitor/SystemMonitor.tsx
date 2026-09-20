@@ -345,10 +345,15 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       });
 
       setHistory(prev => {
-        const newHistory = [
-          ...prev,
-          { time: timeStr, cpu: result.cpu_usage, ram: result.ram_percent }
-        ];
+        const point: DataPoint = {
+          time: timeStr,
+          cpu: result.cpu_usage,
+          ram: result.ram_percent,
+        };
+        if (gpuStatsRef.current) {
+          point.gpu = gpuStatsRef.current.usage_percent;
+        }
+        const newHistory = [...prev, point];
         return newHistory.slice(-60);
       });
     } catch (error) {
