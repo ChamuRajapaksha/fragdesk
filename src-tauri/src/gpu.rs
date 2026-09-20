@@ -15,6 +15,32 @@ pub struct GpuStats {
     pub memory_percent: f32,
 }
 
+/// Pure builder for a `GpuStats` snapshot. Clamps percentages to 0-100
+/// and guards against a zero/absent VRAM budget (which would make the
+/// memory percentage a divide-by-zero); `None` serves as the "no GPU /
+/// no VRAM" case the UI renders as "No GPU detected".
+fn compose_stats(
+    name: String,
+    vram_used: u64,
+    vram_total: u64,
+    usage_percent: f32,
+) -> Option<GpuStats> {
+    if vram_total == 0 {
+        return None;
+    }
+    let usage_percent = usage_percent.clamp(0.0, 100.0);
+    let memory_percent =
+        ((vram_used as f64 / vram_total as f64) * 100.0).clamp(0.0, 100.0) as f32;
+
+    Some(GpuStats {
+        name,
+        usage_percent,
+        memory_used: vram_used,
+        memory_total: vram_total,
+        memory_percent,
+    })
+}
+
 pub fn get_gpu_stats() -> Result<Option<GpuStats>, String> {
     #[cfg(target_os = "windows")]
     {
@@ -28,7 +54,7 @@ pub fn get_gpu_stats() -> Result<Option<GpuStats>, String> {
 
 #[cfg(target_os = "windows")]
 mod windows_impl {
-    use super::GpuStats;
+    use super::{compose_stats, GpuStats};
     use std::mem::size_of;
     use std::{thread, time::Duration};
     use windows::core::{Interface, PCWSTR};
@@ -81,15 +107,7 @@ mod windows_impl {
 
         let usage = query_gpu_usage(info.luid_high, info.luid_low)?;
 
-        let memory_percent = ((vram_used as f64 / vram_total as f64) * 100.0).clamp(0.0, 100.0) as f32;
-
-        Ok(Some(GpuStats {
-            name: info.name,
-            usage_percent: usage,
-            memory_used: vram_used,
-            memory_total: vram_total,
-            memory_percent,
-        }))
+        Ok(compose_stats(info.name, vram_used, vram_total, usage))
     }
 
     /// Scans DXGI adapters and returns the first real (non-software,
