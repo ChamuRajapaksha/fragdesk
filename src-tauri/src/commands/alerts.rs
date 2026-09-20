@@ -12,8 +12,8 @@ pub fn create_alert_rule(
     comparison: String,
     threshold: f32,
 ) -> Result<AlertRule, String> {
-    if metric != "cpu" && metric != "ram" {
-        return Err("Metric must be 'cpu' or 'ram'".to_string());
+    if metric != "cpu" && metric != "ram" && metric != "gpu" {
+        return Err("Metric must be 'cpu', 'ram', or 'gpu'".to_string());
     }
     if comparison != "above" && comparison != "below" {
         return Err("Comparison must be 'above' or 'below'".to_string());
