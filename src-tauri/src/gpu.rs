@@ -310,4 +310,125 @@ mod windows_impl {
         let len = len.min(MAX_INSTANCES);
         String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len))
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use windows::core::PWSTR;
+        use windows::Win32::System::Performance::{PDH_FMT_COUNTERVALUE, PDH_FMT_COUNTERVALUE_0};
+
+        fn item(name: &[u16], value: f64, status: u32) -> PDH_FMT_COUNTERVALUE_ITEM_W {
+            PDH_FMT_COUNTERVALUE_ITEM_W {
+                szName: PWSTR(name.as_ptr() as *mut u16),
+                FmtValue: PDH_FMT_COUNTERVALUE {
+                    CStatus: status,
+                    Anonymous: PDH_FMT_COUNTERVALUE_0 { doubleValue: value },
+                },
+            }
+        }
+
+        fn engine_name(eng: u32) -> Vec<u16> {
+            to_wide(&format!(
+                "pid_1234_luid_0x00000000_0x00011372_phys_0_{eng}_engtype_3D"
+            ))
+        }
+
+        #[test]
+        fn sums_only_matching_adapter_luid_engines() {
+            let matching_a = to_wide("pid_1_luid_0x00000000_0x00011372_phys_0_eng_0_engtype_3D");
+            let matching_b = to_wide("pid_2_luid_0x00000000_0x00011372_phys_0_eng_1_engtype_3D");
+            let unrelated = to_wide("pid_3_luid_0x12345678_0x56789abc_phys_0_eng_0_engtype_3D");
+            let items = vec![
+                item(&matching_a, 40.0, PDH_CSTATUS_VALID_DATA),
+                item(&matching_b, 35.0, PDH_CSTATUS_VALID_DATA),
+                // Different adapter LUID -- must NOT contribute.
+                item(&unrelated, 90.0, PDH_CSTATUS_VALID_DATA),
+            ];
+            let total = aggregate_usage(&items, 0, 0x00011372);
+            assert!((total - 75.0).abs() < 0.001);
+        }
+
+        #[test]
+        fn caps_adapter_wide_utilization_at_100_percent() {
+            let a = engine_name(0);
+            let b = engine_name(1);
+            let items = vec![
+                item(&a, 60.0, PDH_CSTATUS_VALID_DATA),
+                item(&b, 55.0, PDH_CSTATUS_VALID_DATA),
+            ];
+            assert_eq!(aggregate_usage(&items, 0, 0x00011372), 100.0);
+        }
+
+        #[test]
+        fn ignores_non_valid_and_negative_instances() {
+            let ok_name = engine_name(0);
+            let mut not_valid = item(&ok_name, 30.0, PDH_CSTATUS_VALID_DATA);
+            // Anything other than PDH_CSTATUS_VALID_DATA (0) means "not
+            // usable data" -- here a coarse non-zero status.
+            not_valid.FmtValue.CStatus = 1;
+            // Matches the LUID but reports a negative utilization -- a
+            // driver glitch that should be dropped, not subtracted.
+            let negative = item(&engine_name(1), -1.0, PDH_CSTATUS_VALID_DATA);
+            let items = vec![not_valid, negative];
+            assert_eq!(aggregate_usage(&items, 0, 0x00011372), 0.0);
+        }
+
+        #[test]
+        fn no_matching_instances_returns_zero() {
+            let unrelated = to_wide("pid_3_luid_0x12345678_0x56789abc_phys_0_eng_0_engtype_3D");
+            let items = vec![item(&unrelated, 90.0, PDH_CSTATUS_VALID_DATA)];
+            assert_eq!(aggregate_usage(&items, 0, 0x00011372), 0.0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compose_stats;
+
+    #[test]
+    fn composes_stats_with_memory_percent() {
+        let stats = compose_stats(
+            "NVIDIA GeForce RTX 4070".to_string(),
+            8_589_934_592,   // 8 GiB in use
+            17_179_869_184,  // 16 GiB total
+            75.0,
+        )
+        .unwrap();
+        assert_eq!(stats.name, "NVIDIA GeForce RTX 4070");
+        assert_eq!(stats.memory_used, 8_589_934_592);
+        assert_eq!(stats.memory_total, 17_179_869_184);
+        assert!((stats.memory_percent - 50.0).abs() < 0.001);
+        assert!((stats.usage_percent - 75.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn clamps_out_of_range_percentages_to_0_100() {
+        // usage above 100 (multi-engine PDH sum overflow) and VRAM used
+        // exceeding the reporter's own budget both clamp to 100.
+        let stats = compose_stats("GPU".to_string(), 20_000_000_000, 10_000_000_000, 250.0).unwrap();
+        assert_eq!(stats.usage_percent, 100.0);
+        assert_eq!(stats.memory_percent, 100.0);
+
+        // Negative utilization is a driver glitch; treat as idle.
+        let stats = compose_stats("GPU".to_string(), 0, 10_000_000_000, -5.0).unwrap();
+        assert_eq!(stats.usage_percent, 0.0);
+        assert_eq!(stats.memory_percent, 0.0);
+    }
+
+    #[test]
+    fn zero_total_vram_returns_none() {
+        // Zero-division guard: a zero/absent VRAM budget means no usable
+        // GPU stats -- this is also the "no GPU detected" signal for the
+        // UI, on top of the adapter-scan returning no adapters.
+        assert!(compose_stats("GPU".to_string(), 0, 0, 50.0).is_none());
+    }
+
+    #[test]
+    fn name_is_preserved_verbatim() {
+        let stats = compose_stats(String::new(), 1024, 4096, 10.0).unwrap();
+        assert_eq!(stats.name, "");
+        let exact = compose_stats("AMD Radeon RX 7900 XTX".to_string(), 1024, 4096, 10.0).unwrap();
+        assert_eq!(exact.name, "AMD Radeon RX 7900 XTX");
+    }
 }
