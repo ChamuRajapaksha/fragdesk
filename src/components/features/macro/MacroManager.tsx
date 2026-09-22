@@ -1,55 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { Upload, Zap } from "lucide-react";
 import { extractErrorMessage, isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
 import { useAuth } from "../../../community/useAuth";
+import MacroCard from "./MacroCard";
+import {
+    formatDuration,
+    type MacroSummary,
+    type PlaybackProgress,
+    type RecordingPreview,
+} from "./macroTypes";
 import type { NavId } from "../../../features/registry";
-
-
-
-interface MacroSummary {
-    id: string;
-    name: string;
-    created_at: number; // unix seconds
-    event_count: number;
-    duration_ms: number;
-    hotkey: string | null;
-    tags: string[];
-    source: string | null; // null = recorded/imported locally, "community", "starter"
-}
-
-interface RecordingPreview {
-    event_count: number;
-    duration_ms: number;
-}
-
-interface PlaybackProgress {
-    macro_id: string;
-    current_index: number;
-    total: number;
-    repeat_index: number;
-    repeat_total: number;
-}
-
-interface PlaybackFinished {
-    macro_id: string;
-    cancelled: boolean;
-}
-
-function formatDuration(ms: number): string {
-    const seconds = ms / 1000;
-    if (seconds < 60) return `${seconds.toFixed(1)}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
-    return `${mins}m ${secs}s`;
-}
-
-function formatDate(unixSeconds: number): string {
-    return new Date(unixSeconds * 1000).toLocaleString();
-}
+import {
+    Button,
+    EmptyState,
+    ErrorBanner,
+    LoadingState,
+    PageHeader,
+    useToast,
+} from "../../ui";
 
 export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: NavId) => void }) {
+    const { toast } = useToast();
     const [macros, setMacros] = useState<MacroSummary[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isRecording, setIsRecording] = useState(false);
     const [liveCount, setLiveCount] = useState(0);
     const [pendingPreview, setPendingPreview] = useState<RecordingPreview | null>(null);
@@ -95,7 +70,6 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
     const [tagDraft, setTagDraft] = useState("");
 
     const nameInputRef = useRef<HTMLInputElement>(null);
-    const renameInputRef = useRef<HTMLInputElement>(null);
     const confirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const importFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -136,13 +110,10 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             (e) => setProgress(e.payload)
         );
 
-        const unlistenPlaybackFinished = listen<PlaybackFinished>(
-            "macro-playback-finished",
-            () => {
-                setPlayingId(null);
-                setProgress(null);
-            }
-        );
+        const unlistenPlaybackFinished = listen("macro-playback-finished", () => {
+            setPlayingId(null);
+            setProgress(null);
+        });
 
         return () => {
             unlistenRecording.then((f) => f());
@@ -153,6 +124,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
             if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -162,12 +134,6 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             setTimeout(() => nameInputRef.current?.focus(), 50);
         }
     }, [pendingPreview]);
-
-    useEffect(() => {
-        if (renamingId) {
-            setTimeout(() => renameInputRef.current?.focus(), 50);
-        }
-    }, [renamingId]);
 
     useEffect(() => {
         if (!capturingHotkeyId) return;
@@ -189,11 +155,12 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             if (e.shiftKey) mods.push("Shift");
             const combo = [...mods, e.code].join("+");
 
-            void handleSetHotkey(targetId, combo);   // <-- use targetId instead
+            void handleSetHotkey(targetId, combo);
         }
 
         document.addEventListener("keydown", onKeyDown, true);
         return () => document.removeEventListener("keydown", onKeyDown, true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [capturingHotkeyId]);
 
     useEffect(() => {
@@ -216,13 +183,17 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             const combo = [...mods, e.code].join("+");
 
             invoke("set_record_hotkey", { hotkey: combo })
-                .then(() => setRecordHotkey(combo))
+                .then(() => {
+                    setRecordHotkey(combo);
+                    toast("Recording hotkey updated.", "success");
+                })
                 .catch((err) => setError(String(err)))
                 .finally(() => setIsCapturingRecordHotkey(false));
         }
 
         document.addEventListener("keydown", onKeyDown, true);
         return () => document.removeEventListener("keydown", onKeyDown, true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isCapturingRecordHotkey]);
 
     async function refreshMacros() {
@@ -231,6 +202,8 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             setMacros(result);
         } catch (err) {
             setError(String(err));
+        } finally {
+            setIsLoading(false);
         }
     }
 
@@ -268,6 +241,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             setPendingPreview(null);
             setMacroName("");
             await refreshMacros();
+            toast("Macro saved.", "success");
         } catch (err) {
             setError(String(err));
         }
@@ -348,6 +322,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
         try {
             await invoke("delete_macro", { id });
             await refreshMacros();
+            toast("Macro deleted.", "success");
         } catch (err) {
             setError(String(err));
         }
@@ -409,6 +384,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
 
             if (insertError) throw insertError;
             setSharedIds((prev) => new Set(prev).add(id));
+            toast("Macro shared to the community library.", "success");
         } catch (err) {
             setError(extractErrorMessage(err));
         } finally {
@@ -426,6 +402,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             a.download = `${m.name.replace(/[^a-z0-9-_ ]/gi, "_")}.fragdesk-macro.json`;
             a.click();
             URL.revokeObjectURL(url);
+            toast(`Exported "${m.name}".`, "success");
         } catch (err) {
             setError(String(err));
         }
@@ -444,6 +421,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             const text = await file.text();
             await invoke("import_macro_json", { json: text, source: null });
             await refreshMacros();
+            toast(`Imported "${file.name}".`, "success");
         } catch (err) {
             setError(String(err));
         }
@@ -510,12 +488,26 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
 
     return (
         <div className="min-h-full bg-frag-bg text-frag-text p-4 md:p-6 space-y-6">
-            <div>
-                <h1 className="text-2xl font-bold text-frag-primary">Macro Manager</h1>
-                <p className="text-sm text-frag-muted mt-1">
-                    Record keyboard and mouse input, then replay it anytime.
-                </p>
-            </div>
+            <PageHeader
+                title="Macro Manager"
+                subtitle="Record keyboard and mouse input, then replay it anytime."
+                accent={<Zap size={22} />}
+                actions={
+                    <>
+                        <input
+                            ref={importFileInputRef}
+                            type="file"
+                            accept=".json"
+                            onChange={handleImportFileChange}
+                            className="hidden"
+                        />
+                        <Button variant="secondary" onClick={handleImportClick}>
+                            <Upload size={16} />
+                            Import macro
+                        </Button>
+                    </>
+                }
+            />
 
             {hasPermission === false && (
                 <div className="bg-frag-danger/10 border border-frag-danger/40 text-sm rounded-lg px-4 py-3 space-y-1">
@@ -531,11 +523,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                 </div>
             )}
 
-            {error && (
-                <div className="break-words bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2">
-                    {error}
-                </div>
-            )}
+            {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
             {/* Recording control */}
             <div className="bg-frag-surface rounded-xl p-4 md:p-5 border border-frag-border">
@@ -653,24 +641,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
 
             {/* Macro list */}
             <div className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-y-2">
-                    <h2 className="text-sm font-medium text-frag-muted">Your macros</h2>
-                    <div>
-                        <input
-                            ref={importFileInputRef}
-                            type="file"
-                            accept=".json"
-                            onChange={handleImportFileChange}
-                            className="hidden"
-                        />
-                        <button
-                            onClick={handleImportClick}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-frag-border/40 hover:bg-frag-border/70 text-frag-text font-medium"
-                        >
-                            Import macro
-                        </button>
-                    </div>
-                </div>
+                <h2 className="text-sm font-medium text-frag-muted">Your macros</h2>
                 {allTags.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5 pb-1">
                         {allTags.map((tag) => {
@@ -679,7 +650,8 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                 <button
                                     key={tag}
                                     onClick={() => toggleTagFilter(tag)}
-                                        className={`max-w-xs truncate text-xs px-2 py-1 rounded-full border transition-colors ${
+                                    aria-pressed={active}
+                                    className={`max-w-xs truncate text-xs px-2 py-1 rounded-full border transition-colors ${
                                         active
                                             ? "bg-frag-primary/15 border-frag-primary/50 text-frag-primary"
                                             : "bg-frag-border/40 border-frag-border text-frag-muted hover:text-frag-text"
@@ -699,212 +671,57 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                         )}
                     </div>
                 )}
-                {macros.length === 0 ? (
-                    <p className="text-frag-muted text-sm">No macros yet — record one above.</p>
-                ) : visibleMacros.length === 0 ? (
-                    <p className="text-frag-muted text-sm">No macros match the selected tags.</p>
-                ) : (
-                    visibleMacros.map((m) => {
-                        const isThisPlaying = playingId === m.id;
-                        const isRenamingThis = renamingId === m.id;
-                        const isConfirmingDelete = confirmDeleteId === m.id;
 
-                        return (
-                            <div
+                {isLoading ? (
+                    <LoadingState rows={3} label="Loading macros" />
+                ) : macros.length === 0 ? (
+                    <EmptyState
+                        icon={Zap}
+                        title="No macros yet"
+                        description="Record one above, or import a saved macro file."
+                    />
+                ) : visibleMacros.length === 0 ? (
+                    <EmptyState
+                        title="No macros match the selected tags"
+                        description="Try clearing the tag filters above."
+                    />
+                ) : (
+                    <div className="space-y-2">
+                        {visibleMacros.map((m) => (
+                            <MacroCard
                                 key={m.id}
-                                className="bg-frag-surface rounded-xl p-4 border border-frag-border flex items-center justify-between"
-                            >
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        {isRenamingThis ? (
-                                            <input
-                                                ref={renameInputRef}
-                                                type="text"
-                                                value={renameDraft}
-                                                onChange={(e) => setRenameDraft(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter") commitRename();
-                                                    if (e.key === "Escape") cancelRename();
-                                                }}
-                                                onBlur={commitRename}
-                                                className="min-w-0 w-full max-w-xs bg-frag-bg border border-frag-primary rounded px-2 py-1 text-sm focus:outline-none"
-                                            />
-                                        ) : (
-                                            <button
-                                                onClick={() => startRename(m)}
-                                                title="Click to rename"
-                                                className="min-w-0 truncate font-medium text-left hover:text-frag-primary transition-colors"
-                                            >
-                                                {m.name}
-                                            </button>
-                                        )}
-                                        {m.source === "community" && (
-                                            <span
-                                                title="Imported from the Community Library — reviewed this before importing? Playing it simulates real input on your machine."
-                                                className="shrink-0 text-xs bg-frag-danger/10 text-frag-danger border border-frag-danger/30 rounded px-1.5 py-0.5"
-                                            >
-                                                community
-                                            </span>
-                                        )}
-                                        {m.source === "starter" && (
-                                            <span
-                                                title="Imported from FragDesk's bundled starter pack"
-                                                className="shrink-0 text-xs bg-frag-border/40 text-frag-muted rounded px-1.5 py-0.5"
-                                            >
-                                                starter
-                                            </span>
-                                        )}
-                                    </div>
-                                    <p className="text-xs text-frag-muted mt-0.5">
-                                        {m.event_count} events · {formatDuration(m.duration_ms)} ·{" "}
-                                        {formatDate(m.created_at)}
-                                    </p>
-                                    <div className="mt-1.5">
-                                        {capturingHotkeyId === m.id ? (
-                                            <span className="text-xs text-frag-accent animate-pulse">
-                                                Press a key combo... (Esc to cancel)
-                                            </span>
-                                        ) : m.hotkey ? (
-                                            <span className="inline-flex items-center gap-1.5">
-                                                    <span className="break-words text-xs font-mono bg-frag-accent/15 text-frag-accent border border-frag-accent/30 rounded px-1.5 py-0.5">
-                                                    {m.hotkey.replace("CommandOrControl", "Ctrl")}
-                                                </span>
-                                                <button
-                                                    onClick={() => handleClearHotkey(m.id)}
-                                                    className="text-xs text-frag-muted hover:text-frag-danger"
-                                                >
-                                                    clear
-                                                </button>
-                                            </span>
-                                        ) : (
-                                            <button
-                                                onClick={() => setCapturingHotkeyId(m.id)}
-                                                className="text-xs text-frag-muted hover:text-frag-primary"
-                                            >
-                                                + set hotkey
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                                        {m.tags.map((tag) => (
-                                            <span
-                                                key={tag}
-                                                className="inline-flex items-center gap-1 text-xs bg-frag-border/40 text-frag-text rounded-full px-2 py-0.5"
-                                            >
-                                                <span className="max-w-xs truncate">{tag}</span>
-                                                <button
-                                                    onClick={() => handleRemoveTag(m, tag)}
-                                                    className="text-frag-muted hover:text-frag-danger"
-                                                >
-                                                    ×
-                                                </button>
-                                            </span>
-                                        ))}
-                                        {addingTagToId === m.id ? (
-                                            <input
-                                                autoFocus
-                                                type="text"
-                                                value={tagDraft}
-                                                onChange={(e) => setTagDraft(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter") handleAddTag(m);
-                                                    if (e.key === "Escape") {
-                                                        setAddingTagToId(null);
-                                                        setTagDraft("");
-                                                    }
-                                                }}
-                                                onBlur={() => handleAddTag(m)}
-                                                placeholder="tag name"
-                                                className="text-xs bg-frag-bg border border-frag-border rounded-full px-2 py-0.5 w-24 focus:outline-none focus:border-frag-primary"
-                                            />
-                                        ) : (
-                                            <button
-                                                onClick={() => setAddingTagToId(m.id)}
-                                                className="text-xs text-frag-muted hover:text-frag-primary"
-                                            >
-                                                + tag
-                                            </button>
-                                        )}
-                                    </div>
-                                    {isThisPlaying && progress && (
-                                        <div className="mt-2 w-full max-w-64">
-                                            <div className="h-1.5 bg-frag-border/40 rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full bg-frag-accent transition-all"
-                                                    style={{
-                                                        width: `${(progress.current_index / progress.total) * 100}%`,
-                                                    }}
-                                                />
-                                            </div>
-                                            {progress.repeat_total > 1 && (
-                                                <p className="text-xs text-frag-muted mt-1">
-                                                    Repeat {progress.repeat_index + 1} of {progress.repeat_total}
-                                                </p>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2 shrink-0 ml-4">
-                                    {isThisPlaying ? (
-                                        <button
-                                            onClick={handleStopPlayback}
-                                            className="px-3 py-1.5 rounded-lg bg-frag-danger hover:bg-frag-danger/80 text-frag-bg text-sm font-medium"
-                                        >
-                                            Stop
-                                        </button>
-                                    ) : (
-                                        <button
-                                            onClick={() => handlePlay(m.id)}
-                                            disabled={playingId !== null}
-                                            className="px-3 py-1.5 rounded-lg bg-frag-primary hover:bg-frag-primary/80 text-frag-bg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                                        >
-                                            Play
-                                        </button>
-                                    )}
-                                    <button
-                                        onClick={() => handleExport(m)}
-                                        disabled={isThisPlaying}
-                                        className="px-3 py-1.5 rounded-lg bg-frag-border/40 hover:bg-frag-border/70 text-frag-text text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                                    >
-                                        Export
-                                    </button>
-                                    {sharedIds.has(m.id) ? (
-                                        <span className="px-3 py-1.5 rounded-lg bg-frag-success/15 text-frag-success border border-frag-success/30 text-sm font-medium">
-                                            Shared ✓
-                                        </span>
-                                    ) : (
-                                        <button
-                                            onClick={() => handleShareClick(m.id)}
-                                            disabled={isThisPlaying || sharingId === m.id}
-                                            title="Publishes this macro to the public Community Library"
-                                            className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
-                                                confirmShareId === m.id
-                                                    ? "bg-frag-accent text-frag-bg"
-                                                    : "bg-frag-border/40 hover:bg-frag-border/70 text-frag-text"
-                                            }`}
-                                        >
-                                            {sharingId === m.id
-                                                ? "Sharing..."
-                                                : confirmShareId === m.id
-                                                ? "Confirm public share?"
-                                                : "Share"}
-                                        </button>
-                                    )}
-                                    <button
-                                        onClick={() => handleDeleteClick(m.id)}
-                                        disabled={isThisPlaying}
-                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
-                                            isConfirmingDelete
-                                                ? "bg-frag-danger text-frag-bg"
-                                                : "bg-frag-border/40 hover:bg-frag-border/70 text-frag-text"
-                                        }`}
-                                    >
-                                        {isConfirmingDelete ? "Confirm?" : "Delete"}
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })
+                                macro={m}
+                                isPlaying={playingId === m.id}
+                                progress={progress}
+                                isRenaming={renamingId === m.id}
+                                renameDraft={renameDraft}
+                                isConfirmingDelete={confirmDeleteId === m.id}
+                                isCapturingHotkey={capturingHotkeyId === m.id}
+                                isConfirmingShare={confirmShareId === m.id}
+                                isSharing={sharingId === m.id}
+                                isShared={sharedIds.has(m.id)}
+                                isAddingTag={addingTagToId === m.id}
+                                tagDraft={tagDraft}
+                                hasActivePlayback={playingId !== null}
+                                onStartRename={() => startRename(m)}
+                                onRenameChange={setRenameDraft}
+                                onCommitRename={commitRename}
+                                onCancelRename={cancelRename}
+                                onClearHotkey={() => handleClearHotkey(m.id)}
+                                onCaptureHotkey={() => setCapturingHotkeyId(m.id)}
+                                onAddTag={() => handleAddTag(m)}
+                                onRemoveTag={(tag) => handleRemoveTag(m, tag)}
+                                onTagDraftChange={setTagDraft}
+                                onOpenTagInput={() => setAddingTagToId(m.id)}
+                                onCloseTagInput={() => setAddingTagToId(null)}
+                                onPlay={() => handlePlay(m.id)}
+                                onStopPlayback={handleStopPlayback}
+                                onExport={() => handleExport(m)}
+                                onShareClick={() => handleShareClick(m.id)}
+                                onDeleteClick={() => handleDeleteClick(m.id)}
+                            />
+                        ))}
+                    </div>
                 )}
             </div>
         </div>
