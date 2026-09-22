@@ -188,6 +188,16 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     rulesRef.current = rules;
   }, [rules]);
 
+  // Escape closes the customize-layout dialog.
+  useEffect(() => {
+    if (!showCustomize) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowCustomize(false);
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [showCustomize]);
+
   const loadRules = async () => {
     try {
       const result = await invoke<AlertRule[]>('get_alert_rules');

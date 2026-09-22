@@ -255,6 +255,7 @@ function MacroCard({
                 <button
                     onClick={() => onDeleteClick(m.id)}
                     disabled={isPlaying}
+                    aria-live="polite"
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
                         isConfirmingDelete
                             ? "bg-frag-danger text-frag-bg"

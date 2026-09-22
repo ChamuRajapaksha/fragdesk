@@ -90,6 +90,7 @@ function ClipboardItemRow({
         <button
           onClick={() => onDelete(item.id)}
           aria-label={isConfirmingDelete ? 'Confirm delete item' : 'Delete item'}
+          aria-live="polite"
           className={`p-2 rounded-lg transition-colors ${
             isConfirmingDelete
               ? 'bg-frag-danger text-frag-bg hover:bg-frag-danger/90'

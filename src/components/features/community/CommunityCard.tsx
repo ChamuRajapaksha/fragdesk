@@ -133,6 +133,7 @@ function CommunityCard({
                         <button
                             onClick={onDeleteClick}
                             disabled={isDeleting}
+                            aria-live="polite"
                             className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 transition-colors ${
                                 isConfirmingDelete
                                     ? "bg-frag-danger text-frag-bg"
