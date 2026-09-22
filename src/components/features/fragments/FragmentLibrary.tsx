@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Layers } from "lucide-react";
+import {
+    Badge,
+    EmptyState,
+    ErrorBanner,
+    LoadingState,
+    PageHeader,
+    useToast,
+} from "../../ui";
 
 interface BundledFragmentSummary {
     filename: string;
@@ -14,6 +23,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default function FragmentLibrary() {
+    const { toast } = useToast();
     const [fragments, setFragments] = useState<BundledFragmentSummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -42,6 +52,7 @@ export default function FragmentLibrary() {
         try {
             await invoke("import_bundled_fragment", { filename: f.filename });
             setImportedFilenames((prev) => new Set(prev).add(f.filename));
+            toast(`Imported "${f.name}".`, "success");
         } catch (err) {
             setError(String(err));
         } finally {
@@ -51,24 +62,31 @@ export default function FragmentLibrary() {
 
     return (
         <div className="min-h-full bg-frag-bg text-frag-text p-4 md:p-6 space-y-6">
-            <div>
-                <h1 className="text-2xl font-bold text-frag-primary">Fragment Library</h1>
-                <p className="text-sm text-frag-muted mt-1">
-                    Curated fragments bundled with FragDesk — import one to try it out. This is a
-                    local starter pack for now; community-submitted fragments are coming later.
-                </p>
-            </div>
+            <PageHeader
+                title="Fragment Library"
+                subtitle="Curated fragments bundled with FragDesk — import one to try it out. This is a local starter pack for now; community-submitted fragments arrive there shortly."
+                accent={<Layers size={22} />}
+                actions={
+                    <>
+                        {!loading && fragments.length > 0 && (
+                            <Badge variant="muted">
+                                {fragments.length} fragment{fragments.length === 1 ? "" : "s"}
+                            </Badge>
+                        )}
+                    </>
+                }
+            />
 
-            {error && (
-                <div className="bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2 break-words">
-                    {error}
-                </div>
-            )}
+            {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
             {loading ? (
-                <p className="text-frag-muted text-sm">Loading...</p>
+                <LoadingState rows={4} label="Loading bundled fragments" />
             ) : fragments.length === 0 ? (
-                <p className="text-frag-muted text-sm">No bundled fragments found.</p>
+                <EmptyState
+                    icon={Layers}
+                    title="No bundled fragments found"
+                    description="The starter pack shipped with FragDesk couldn't be found. Reinstall the app or check the bundled assets folder."
+                />
             ) : (
                 <div className="space-y-2">
                     {fragments.map((f) => {
