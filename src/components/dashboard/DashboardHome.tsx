@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Activity, ArrowRight, Clipboard, Command, Save, Sparkles, X, Zap, type LucideIcon } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
@@ -102,6 +102,19 @@ const CARD_VARIANTS = {
 
 const SPOTLIGHT_DISMISS_KEY = 'fragdesk:spotlight-dismissed';
 
+function StatCardSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading statistics"
+      className="animate-pulse bg-frag-surface border border-frag-border rounded-lg p-4 md:p-5"
+    >
+      <div className="h-3 rounded bg-frag-border/60 w-24" />
+      <div className="mt-3 h-7 rounded bg-frag-border/60 w-16" />
+    </div>
+  );
+}
+
 export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
   const { toast } = useToast();
   const [stats, setStats] = useState<DashboardStats>({
@@ -109,6 +122,8 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
     macroCount: null,
     cpuUsage: null,
   });
+  const [statsLoading, setStatsLoading] = useState(true);
+  const pendingRef = useRef(0);
 
   const sections = useMemo(
     () => FEATURES_BY_GROUP.filter((section) => FEATURE_GROUPS.has(section.group)),
@@ -145,20 +160,28 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
     // Each stat fetched independently so one broken/unconfigured feature
     // (e.g. clipboard monitor never started) doesn't blank out the others
     // -- a failure just leaves that card showing "--".
+    const settle = () => {
+      pendingRef.current += 1;
+      if (pendingRef.current >= 3) setStatsLoading(false);
+    };
+
     invoke<{ id: number }[]>('get_clipboard_items', { limit: 1000 })
       .then((items) => setStats((s) => ({ ...s, clipCount: items.length })))
-      .catch(() => setStats((s) => ({ ...s, clipCount: null })));
+      .catch(() => setStats((s) => ({ ...s, clipCount: null })))
+      .finally(settle);
 
     invoke<{ id: string }[]>('get_macros')
       .then((macros) => setStats((s) => ({ ...s, macroCount: macros.length })))
-      .catch(() => setStats((s) => ({ ...s, macroCount: null })));
+      .catch(() => setStats((s) => ({ ...s, macroCount: null })))
+      .finally(settle);
 
     invoke<Record<string, unknown>>('get_system_stats')
       .then((data) => {
         const cpu = data.cpu_usage ?? data.cpu_usage_percent ?? data.cpu;
         setStats((s) => ({ ...s, cpuUsage: typeof cpu === 'number' ? cpu : null }));
       })
-      .catch(() => setStats((s) => ({ ...s, cpuUsage: null })));
+      .catch(() => setStats((s) => ({ ...s, cpuUsage: null })))
+      .finally(settle);
   }, []);
 
   const clips = stats.clipCount ?? 0;
@@ -234,36 +257,46 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
 
       {/* Stats row with sparklines */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8 md:mb-10">
-        <StatCard
-          icon={Clipboard as LucideIcon}
-          label="Total Clips"
-          value={stats.clipCount ?? '--'}
-          accent="text-frag-primary"
-          onClick={() => setActiveTab('clipboard')}
-          sparkline={
-            <Sparkline id="clip" color={clipColor} data={clipSeries} />
-          }
-        />
-        <StatCard
-          icon={Zap}
-          label="Saved Macros"
-          value={stats.macroCount ?? '--'}
-          accent="text-frag-accent"
-          onClick={() => setActiveTab('macros')}
-          sparkline={
-            <Sparkline id="macro" color={macroColor} data={macroSeries} />
-          }
-        />
-        <StatCard
-          icon={Activity}
-          label="CPU Usage"
-          value={stats.cpuUsage !== null ? `${stats.cpuUsage.toFixed(0)}%` : '--'}
-          accent="text-frag-success"
-          onClick={() => setActiveTab('monitor')}
-          sparkline={
-            <Sparkline id="cpu" color={cpuColor} data={cpuSeries} />
-          }
-        />
+        {statsLoading ? (
+          <>
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+          </>
+        ) : (
+          <>
+            <StatCard
+              icon={Clipboard as LucideIcon}
+              label="Total Clips"
+              value={stats.clipCount ?? '--'}
+              accent="text-frag-primary"
+              onClick={() => setActiveTab('clipboard')}
+              sparkline={
+                <Sparkline id="clip" color={clipColor} data={clipSeries} />
+              }
+            />
+            <StatCard
+              icon={Zap}
+              label="Saved Macros"
+              value={stats.macroCount ?? '--'}
+              accent="text-frag-accent"
+              onClick={() => setActiveTab('macros')}
+              sparkline={
+                <Sparkline id="macro" color={macroColor} data={macroSeries} />
+              }
+            />
+            <StatCard
+              icon={Activity}
+              label="CPU Usage"
+              value={stats.cpuUsage !== null ? `${stats.cpuUsage.toFixed(0)}%` : '--'}
+              accent="text-frag-success"
+              onClick={() => setActiveTab('monitor')}
+              sparkline={
+                <Sparkline id="cpu" color={cpuColor} data={cpuSeries} />
+              }
+            />
+          </>
+        )}
       </div>
 
       {/* New-feature spotlight */}
