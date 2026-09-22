@@ -6,6 +6,7 @@ interface StatCardProps {
   label: string;
   value: ReactNode;
   accent?: string;
+  detail?: ReactNode;
   sparkline?: ReactNode;
   onClick?: () => void;
   className?: string;
@@ -16,6 +17,7 @@ export default function StatCard({
   label,
   value,
   accent = 'text-frag-primary',
+  detail,
   sparkline,
   onClick,
   className = '',
@@ -32,8 +34,11 @@ export default function StatCard({
         <Icon size={18} className={`shrink-0 ${accent}`} />
       </div>
       <div className="mt-2 flex items-end justify-between gap-3">
-        <p className={`text-3xl font-bold ${accent}`}>{value}</p>
-        {sparkline && <div className="w-24 h-10 max-w-[40%]">{sparkline}</div>}
+        <div className="min-w-0">
+          <p className={`text-3xl font-bold break-words ${accent}`}>{value}</p>
+          {detail && <p className="text-xs text-frag-muted mt-1 truncate">{detail}</p>}
+        </div>
+        {sparkline && <div className="w-24 h-10 max-w-[40%] shrink-0">{sparkline}</div>}
       </div>
     </div>
   );
