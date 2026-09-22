@@ -77,11 +77,24 @@ const WIDGET_LABELS: Record<string, string> = {
 };
 
 const TOOLTIP_STYLE = {
-  backgroundColor: 'var(--frag-surface)',
-  border: '1px solid var(--frag-border)',
+  backgroundColor: 'rgb(var(--frag-surface))',
+  border: '1px solid rgb(var(--frag-border))',
   borderRadius: '8px',
-  color: 'var(--frag-text)',
+  color: 'rgb(var(--frag-text))',
 };
+
+// Theme colors are stored as bare RGB triplets ("0 217 255"); SVG attributes
+// (stroke/fill/stopColor) need a concrete color, so resolve once per render.
+function resolveColor(variable: string): string {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(variable)
+    .trim();
+  const parts = raw.split(/\s+/).map((p) => Number(p));
+  if (parts.length === 3 && parts.every((p) => !Number.isNaN(p))) {
+    return `rgb(${parts.join(', ')})`;
+  }
+  return raw || 'currentColor';
+}
 
 function GraphCard({
   title,
@@ -100,6 +113,9 @@ function GraphCard({
   iconClass: string;
   data: DataPoint[];
 }) {
+  const lineColor = resolveColor(colorVar);
+  const mutedColor = resolveColor('--frag-muted');
+  const borderColor = resolveColor('--frag-border');
   return (
     <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
       <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
@@ -110,15 +126,32 @@ function GraphCard({
         <AreaChart data={data}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={colorVar} stopOpacity={0.3} />
-              <stop offset="95%" stopColor={colorVar} stopOpacity={0} />
+              <stop offset="5%" stopColor={lineColor} stopOpacity={0.3} />
+              <stop offset="95%" stopColor={lineColor} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--frag-border)" />
-          <XAxis dataKey="time" stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} />
-          <YAxis stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} domain={[0, 100]} />
-          <Tooltip contentStyle={TOOLTIP_STYLE} />
-          <Area type="monotone" dataKey={dataKey} stroke={colorVar} strokeWidth={2} fill={`url(#${gradientId})`} />
+          <CartesianGrid strokeDasharray="3 3" stroke={borderColor} />
+          <XAxis
+            dataKey="time"
+            stroke={mutedColor}
+            tick={{ fill: mutedColor, fontSize: 12 }}
+            tickLine={{ stroke: mutedColor }}
+          />
+          <YAxis
+            stroke={mutedColor}
+            tick={{ fill: mutedColor, fontSize: 12 }}
+            tickLine={{ stroke: mutedColor }}
+            domain={[0, 100]}
+            width={40}
+          />
+          <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: mutedColor }} />
+          <Area
+            type="monotone"
+            dataKey={dataKey}
+            stroke={lineColor}
+            strokeWidth={2}
+            fill={`url(#${gradientId})`}
+          />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -693,7 +726,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         title="CPU Usage Over Time"
         icon={Cpu}
         dataKey="cpu"
-        colorVar="var(--frag-primary)"
+        colorVar="--frag-primary"
         gradientId="cpuGradient"
         iconClass="text-frag-primary"
         data={history}
@@ -705,7 +738,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         title="RAM Usage Over Time"
         icon={MemoryStick}
         dataKey="ram"
-        colorVar="var(--frag-accent)"
+        colorVar="--frag-accent"
         gradientId="ramGradient"
         iconClass="text-frag-accent"
         data={history}
@@ -717,7 +750,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         title="GPU Usage Over Time"
         icon={Gpu}
         dataKey="gpu"
-        colorVar="var(--frag-warning)"
+        colorVar="--frag-warning"
         gradientId="gpuGradient"
         iconClass="text-frag-warning"
         data={history}

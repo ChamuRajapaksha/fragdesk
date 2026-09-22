@@ -35,7 +35,7 @@ export default function StatCard({
       </div>
       <div className="mt-2 flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <p className={`text-3xl font-bold break-words ${accent}`}>{value}</p>
+          <p className={`text-3xl font-bold tabular-nums break-words ${accent}`}>{value}</p>
           {detail && <p className="text-xs text-frag-muted mt-1 truncate">{detail}</p>}
         </div>
         {sparkline && <div className="w-24 h-10 max-w-[40%] shrink-0">{sparkline}</div>}

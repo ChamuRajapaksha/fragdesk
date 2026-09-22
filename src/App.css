@@ -8,12 +8,12 @@
   --frag-surface: 20 25 51;
   --frag-border: 30 41 59;
   --frag-primary: 0 217 255;
-  --frag-accent: 176 38 255;
+  --frag-accent: 196 94 255;
   --frag-danger: 255 51 102;
   --frag-success: 0 255 136;
   --frag-warning: 251 191 36;
   --frag-text: 228 228 231;
-  --frag-muted: 113 113 122;
+  --frag-muted: 161 161 170;
   --frag-shadow: 0 0 0;
 }
 
