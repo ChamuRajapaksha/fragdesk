@@ -51,13 +51,13 @@ export default function AuthPanel({ onAuthed }: AuthPanelProps) {
     }
 
     return (
-        <div className="bg-frag-surface rounded-2xl p-6 border border-white/5 shadow-[0_0_0_1px_rgb(var(--frag-primary)_/_0.04)] focus-within:border-frag-primary/30 transition-colors max-w-sm w-full">
+        <div className="bg-frag-surface rounded-2xl p-6 border border-frag-border shadow-[0_0_0_1px_rgb(var(--frag-primary)_/_0.04)] focus-within:border-frag-primary/30 transition-colors max-w-sm w-full">
             {/* Eyebrow + heading */}
             <div className="mb-5">
                 <p className="text-[10px] tracking-[0.2em] text-frag-primary/60 font-medium uppercase mb-1">
                     Account access
                 </p>
-                <h2 className="text-lg font-semibold text-white flex items-center gap-1.5">
+                <h2 className="text-lg font-semibold text-frag-text flex items-center gap-1.5">
                     <span className="text-frag-primary">&gt;</span>
                     {mode === "sign-in" ? "Sign in" : "Create your account"}
                 </h2>
@@ -110,7 +110,7 @@ export default function AuthPanel({ onAuthed }: AuthPanelProps) {
                         placeholder="Email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="w-full bg-frag-bg border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-frag-muted focus:outline-none focus:border-frag-primary focus:ring-1 focus:ring-frag-primary/30 transition-colors"
+                        className="w-full bg-frag-bg border border-frag-border rounded-lg px-3 py-2.5 text-sm text-frag-text placeholder:text-frag-muted focus:outline-none focus:border-frag-primary focus:ring-1 focus:ring-frag-primary/30 transition-colors"
                     />
                 </div>
 
@@ -128,7 +128,7 @@ export default function AuthPanel({ onAuthed }: AuthPanelProps) {
                             placeholder={mode === "sign-up" ? "Password (min 6 characters)" : "Password"}
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="w-full bg-frag-bg border border-white/10 rounded-lg pl-3 pr-10 py-2.5 text-sm text-white placeholder:text-frag-muted focus:outline-none focus:border-frag-primary focus:ring-1 focus:ring-frag-primary/30 transition-colors"
+                            className="w-full bg-frag-bg border border-frag-border rounded-lg pl-3 pr-10 py-2.5 text-sm text-frag-text placeholder:text-frag-muted focus:outline-none focus:border-frag-primary focus:ring-1 focus:ring-frag-primary/30 transition-colors"
                         />
                         <button
                             type="button"

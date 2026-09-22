@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { FEATURES, GROUP_LABELS, type NavId } from "../../../features/registry";
 
 interface MacroSummary {
     id: string;
@@ -9,22 +10,12 @@ interface MacroSummary {
 }
 
 interface CommandPaletteProps {
-    setActiveTab: (tab: string) => void;
+    setActiveTab: (tab: NavId) => void;
 }
 
 type PaletteCommand =
-    | { kind: "nav"; id: string; label: string; hint: string }
-    | { kind: "play-macro"; id: string; label: string; hint: string };
-
-const NAV_TARGETS: { id: string; label: string }[] = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "clipboard", label: "Clipboard" },
-    { id: "macros", label: "Macro Manager" },
-    { id: "monitor", label: "System Monitor" },
-    { id: "fragments", label: "Fragment Library" },
-    { id: "community", label: "Community Library" },
-    { id: "settings", label: "Settings" },
-];
+    | { kind: "nav"; id: NavId; label: string; hint: string; keywords: string[] }
+    | { kind: "play-macro"; id: string; label: string; hint: string; keywords: string[] };
 
 export default function CommandPalette({ setActiveTab }: CommandPaletteProps) {
     const [isOpen, setIsOpen] = useState(false);
@@ -65,11 +56,12 @@ export default function CommandPalette({ setActiveTab }: CommandPaletteProps) {
 
     if (!isOpen) return null;
 
-    const navCommands: PaletteCommand[] = NAV_TARGETS.map((t) => ({
+    const navCommands: PaletteCommand[] = FEATURES.map((f) => ({
         kind: "nav",
-        id: t.id,
-        label: `Go to ${t.label}`,
-        hint: "navigate",
+        id: f.id,
+        label: `Go to ${f.label}`,
+        hint: GROUP_LABELS[f.group],
+        keywords: [f.label.toLowerCase(), ...f.keywords],
     }));
 
     const macroCommands: PaletteCommand[] = macros.map((m) => ({
@@ -77,12 +69,15 @@ export default function CommandPalette({ setActiveTab }: CommandPaletteProps) {
         id: m.id,
         label: `Play "${m.name}"`,
         hint: `${m.event_count} events`,
+        keywords: ["play", "macro", m.name.toLowerCase()],
     }));
 
     const allCommands = [...navCommands, ...macroCommands];
     const q = query.trim().toLowerCase();
     const filtered = q
-        ? allCommands.filter((c) => c.label.toLowerCase().includes(q))
+        ? allCommands.filter((c) =>
+            c.label.toLowerCase().includes(q) || c.keywords.some((k) => k.includes(q))
+          )
         : allCommands;
 
     function runCommand(cmd: PaletteCommand) {
@@ -115,7 +110,7 @@ export default function CommandPalette({ setActiveTab }: CommandPaletteProps) {
             onClick={() => setIsOpen(false)}
         >
             <div
-                className="bg-frag-surface border border-white/10 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden"
+                className="bg-frag-surface border border-frag-border rounded-xl w-full max-w-lg shadow-2xl overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
             >
                 <input
@@ -128,11 +123,11 @@ export default function CommandPalette({ setActiveTab }: CommandPaletteProps) {
                     }}
                     onKeyDown={onInputKeyDown}
                     placeholder="Jump to a tab or play a macro..."
-                    className="w-full bg-transparent px-4 py-3 text-white placeholder-gray-500 border-b border-white/10 focus:outline-none"
+                    className="w-full bg-transparent px-4 py-3 text-frag-text placeholder-frag-muted border-b border-frag-border focus:outline-none"
                 />
                 <div className="max-h-80 overflow-y-auto py-1">
                     {filtered.length === 0 ? (
-                        <p className="text-sm text-gray-500 px-4 py-3">No matches.</p>
+                        <p className="text-sm text-frag-muted px-4 py-3">No matches.</p>
                     ) : (
                         filtered.map((cmd, i) => (
                             <button
@@ -142,16 +137,16 @@ export default function CommandPalette({ setActiveTab }: CommandPaletteProps) {
                                 className={`w-full flex items-center justify-between px-4 py-2 text-sm text-left transition-colors ${
                                     i === selectedIndex
                                         ? "bg-frag-primary/10 text-frag-primary"
-                                        : "text-gray-300"
+                                        : "text-frag-text"
                                 }`}
                             >
                                 <span>{cmd.label}</span>
-                                <span className="text-xs text-gray-500">{cmd.hint}</span>
+                                <span className="text-xs text-frag-muted">{cmd.hint}</span>
                             </button>
                         ))
                     )}
                 </div>
-                <div className="px-4 py-2 border-t border-white/10 text-xs text-gray-500 flex gap-3">
+                <div className="px-4 py-2 border-t border-frag-border text-xs text-frag-muted flex gap-3">
                     <span>↑↓ navigate</span>
                     <span>↵ select</span>
                     <span>esc close</span>

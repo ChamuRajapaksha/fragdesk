@@ -1,22 +1,12 @@
 import { motion } from 'framer-motion';
-import { Clipboard, Zap, Activity, Settings, Layers, Users } from 'lucide-react';
 import { useAuth } from '../../community/useAuth';
 import { isSupabaseConfigured } from '../../community/supabaseClient';
+import { FEATURES_BY_GROUP, featureMode, type NavId } from '../../features/registry';
 
 interface SidebarProps {
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
+  activeTab: NavId;
+  setActiveTab: (tab: NavId) => void;
 }
-
-const menuItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: Layers },
-  { id: 'clipboard', label: 'Clipboard', icon: Clipboard },
-  { id: 'macros', label: 'Macros', icon: Zap },
-  { id: 'monitor', label: 'Monitor', icon: Activity },
-  { id: 'fragments', label: 'Fragments', icon: Layers },
-  { id: 'community', label: 'Community', icon: Users },
-  { id: 'settings', label: 'Settings', icon: Settings },
-];
 
 export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
   const { user, loading: authLoading } = useAuth();
@@ -32,38 +22,53 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2">
-        {menuItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
+      <nav className="flex-1 p-4 overflow-y-auto space-y-4">
+        {FEATURES_BY_GROUP.map((section) => (
+          <div key={section.group}>
+            <p className="px-4 mb-1 text-[10px] font-semibold uppercase tracking-widest text-frag-muted">
+              {section.label}
+            </p>
+            <div className="space-y-0.5">
+              {section.features.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                const isNew = featureMode(item.id) === 'new';
 
-          return (
-            <motion.button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`
-                w-full flex items-center gap-3 px-4 py-3 rounded-lg
-                transition-all duration-200 relative
-                ${isActive 
-                  ? 'text-frag-primary bg-frag-primary/10' 
-                  : 'text-frag-muted hover:text-frag-text hover:bg-frag-bg'
-                }
-              `}
-              whileHover={{ x: 4 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {isActive && (
-                <motion.div
-                  layoutId="activeTab"
-                  className="absolute left-0 top-0 bottom-0 w-1 bg-frag-primary rounded-r"
-                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                />
-              )}
-              <Icon size={20} className="shrink-0" />
-              <span className="font-medium min-w-0 truncate">{item.label}</span>
-            </motion.button>
-          );
-        })}
+                return (
+                  <motion.button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`
+                      w-full flex items-center gap-3 px-4 py-3 rounded-lg
+                      transition-all duration-200 relative
+                      ${isActive
+                        ? 'text-frag-primary bg-frag-primary/10'
+                        : 'text-frag-muted hover:text-frag-text hover:bg-frag-bg'
+                      }
+                    `}
+                    whileHover={{ x: 4 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    {isActive && (
+                      <motion.div
+                        layoutId="activeTab"
+                        className="absolute left-0 top-0 bottom-0 w-1 bg-frag-primary rounded-r"
+                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      />
+                    )}
+                    <Icon size={20} className="shrink-0" />
+                    <span className="font-medium min-w-0 truncate">{item.label}</span>
+                    {isNew && (
+                      <span className="ml-auto shrink-0 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-frag-accent/15 text-frag-accent">
+                        New
+                      </span>
+                    )}
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* Auth status */}

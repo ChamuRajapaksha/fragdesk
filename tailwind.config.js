@@ -20,6 +20,9 @@ export default {
           muted: 'rgb(var(--frag-muted) / <alpha-value>)',
         }
       },
+      boxShadow: {
+        card: '0 1px 2px rgb(var(--frag-shadow) / 0.4), 0 8px 24px -6px rgb(var(--frag-shadow) / 0.35)',
+      },
       animation: {
         'glow': 'glow 2s ease-in-out infinite alternate',
       },

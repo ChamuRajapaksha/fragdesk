@@ -1,100 +1,23 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Users } from "lucide-react";
 import { extractErrorMessage, isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
 import { useAuth } from "../../../community/useAuth";
 import AuthPanel from "./AuthPanel";
+import CommunityCard from "./CommunityCard";
+import FilterBar from "./FilterBar";
+import { type CommunityFragmentRow } from "./communityTypes";
+import { EmptyState, ErrorBanner, LoadingState, PageHeader } from "../../ui";
 
-interface CommunityFragmentRow {
-    id: string;
-    fragment_type: string;
-    name: string;
-    tags: string[];
-    format_version: number;
-    payload: unknown;
-    submitted_by: string | null;
-    download_count: number;
-    created_at: string;
-}
-
-interface MacroEventLike {
-    type: string;
-    key?: string;
-    button?: string;
-    delay_ms?: number;
-}
-
-interface MacroPreviewStats {
-    keyPresses: number;
-    mouseClicks: number;
-    mouseMoves: number;
-    wheelScrolls: number;
-    distinctKeys: string[];
-    totalEvents: number;
-}
-
-const TYPE_LABELS: Record<string, string> = {
-    macro: "Macro",
-    clipboard_snippet: "Clipboard Snippet",
-    monitor_alert_rule: "Alert Rule",
-    monitor_layout: "Monitor Layout",
-};
-
-const REPORT_REASONS: { value: string; label: string }[] = [
-    { value: "not_as_described", label: "Doesn't do what it claims" },
-    { value: "offensive", label: "Offensive content" },
-    { value: "spam", label: "Spam or duplicate" },
-    { value: "other", label: "Other" },
-];
-
-function summarizeMacroPayload(payload: unknown): MacroPreviewStats | null {
-    if (
-        typeof payload !== "object" ||
-        payload === null ||
-        !("events" in payload) ||
-        !Array.isArray((payload as { events: unknown }).events)
-    ) {
-        return null;
-    }
-
-    const events = (payload as { events: MacroEventLike[] }).events;
-    const stats: MacroPreviewStats = {
-        keyPresses: 0,
-        mouseClicks: 0,
-        mouseMoves: 0,
-        wheelScrolls: 0,
-        distinctKeys: [],
-        totalEvents: events.length,
-    };
-    const keySet = new Set<string>();
-
-    for (const e of events) {
-        switch (e.type) {
-            case "KeyDown":
-                stats.keyPresses += 1;
-                if (e.key) keySet.add(e.key);
-                break;
-            case "MouseDown":
-                stats.mouseClicks += 1;
-                break;
-            case "MouseMove":
-                stats.mouseMoves += 1;
-                break;
-            case "Wheel":
-                stats.wheelScrolls += 1;
-                break;
-            default:
-                break;
-        }
-    }
-
-    stats.distinctKeys = Array.from(keySet);
-    return stats;
-}
+const PAGE_SIZE = 25;
 
 export default function CommunityLibrary() {
     const { user, loading: authLoading, signOut } = useAuth();
     const [fragments, setFragments] = useState<CommunityFragmentRow[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [hasMore, setHasMore] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
     const [importingId, setImportingId] = useState<string | null>(null);
@@ -115,6 +38,7 @@ export default function CommunityLibrary() {
         } else {
             setLoading(false);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Load which fragments this user has already reported, so the button
@@ -142,14 +66,42 @@ export default function CommunityLibrary() {
             const { data, error: queryError } = await supabase
                 .from("fragments")
                 .select("*")
-                .order("created_at", { ascending: false });
+                .order("created_at", { ascending: false })
+                .range(0, PAGE_SIZE - 1);
 
             if (queryError) throw queryError;
             setFragments((data as CommunityFragmentRow[]) ?? []);
+            setHasMore((data?.length ?? 0) === PAGE_SIZE);
         } catch (err) {
             setError(extractErrorMessage(err));
         } finally {
             setLoading(false);
+        }
+    }
+
+    async function loadMore() {
+        if (!supabase || loadingMore) return;
+        setLoadingMore(true);
+        try {
+            const { data, error: queryError } = await supabase
+                .from("fragments")
+                .select("*")
+                .order("created_at", { ascending: false })
+                .range(fragments.length, fragments.length + PAGE_SIZE - 1);
+
+            if (queryError) throw queryError;
+            setFragments((prev) => {
+                const existing = new Set(prev.map((f) => f.id));
+                const fresh = (data as CommunityFragmentRow[])
+                    .filter((f) => !existing.has(f.id))
+                    .map((f) => f);
+                return [...prev, ...fresh];
+            });
+            setHasMore((data?.length ?? 0) === PAGE_SIZE);
+        } catch (err) {
+            setError(extractErrorMessage(err));
+        } finally {
+            setLoadingMore(false);
         }
     }
 
@@ -303,22 +255,29 @@ export default function CommunityLibrary() {
     }
 
     const allTags = Array.from(new Set(fragments.flatMap((f) => f.tags))).sort();
+    const query = searchQuery.trim().toLowerCase();
     const visibleFragments = fragments
         .filter((f) => (showOnlyMine ? user !== null && f.submitted_by === user.id : true))
         .filter((f) =>
             activeTagFilters.length === 0 ? true : f.tags.some((t) => activeTagFilters.includes(t))
+        )
+        .filter((f) =>
+            query.length === 0
+                ? true
+                : f.name.toLowerCase().includes(query) ||
+                  f.tags.some((t) => t.toLowerCase().includes(query)) ||
+                  f.fragment_type.toLowerCase().includes(query)
         );
 
     if (!isSupabaseConfigured) {
         return (
             <div className="min-h-full bg-frag-bg text-frag-text p-4 md:p-6 space-y-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-frag-primary">Community Library</h1>
-                    <p className="text-sm text-frag-muted mt-1">
-                        Browse and import fragments shared by the community.
-                    </p>
-                </div>
-                <div className="bg-frag-surface rounded-xl p-5 border border-white/5 text-sm text-frag-muted">
+                <PageHeader
+                    title="Community Library"
+                    subtitle="Browse and import fragments shared by the community."
+                    accent={<Users size={22} />}
+                />
+                <div className="bg-frag-surface rounded-xl p-5 border border-frag-border text-sm text-frag-muted">
                     <p className="font-medium text-frag-text mb-1">Not set up yet</p>
                     <p>
                         The community library needs a Supabase project connected. Add{" "}
@@ -334,25 +293,25 @@ export default function CommunityLibrary() {
 
     return (
         <div className="min-h-full bg-frag-bg text-frag-text p-4 md:p-6 space-y-6">
-            <div className="flex flex-wrap items-start justify-between gap-y-3">
-                <div className="min-w-0">
-                    <h1 className="text-2xl font-bold text-frag-primary">Community Library</h1>
-                    <p className="text-sm text-frag-muted mt-1">
-                        Browse and import fragments shared by the community. Macros simulate real
-                        keyboard/mouse input — preview what one does before importing it.
-                    </p>
-                </div>
-                {!authLoading && user && (
-                    <div className="text-right text-xs text-frag-muted shrink-0 ml-4">
-                        <p>
-                            Signed in as <span className="text-frag-text">{user.email}</span>
-                        </p>
-                        <button onClick={() => signOut()} className="text-frag-danger hover:underline">
-                            Sign out
-                        </button>
-                    </div>
-                )}
-            </div>
+            <PageHeader
+                title="Community Library"
+                subtitle="Browse and import fragments shared by the community. Macros simulate real keyboard/mouse input — preview what one does before importing it."
+                accent={<Users size={22} />}
+                actions={
+                    <>
+                        {!authLoading && user && (
+                            <div className="text-right text-xs text-frag-muted shrink-0 ml-4">
+                                <p>
+                                    Signed in as <span className="text-frag-text">{user.email}</span>
+                                </p>
+                                <button onClick={() => signOut()} className="text-frag-danger hover:underline">
+                                    Sign out
+                                </button>
+                            </div>
+                        )}
+                    </>
+                }
+            />
 
             {!authLoading && !user && (
                 <div className="space-y-2">
@@ -364,67 +323,45 @@ export default function CommunityLibrary() {
                 </div>
             )}
 
-            {error && (
-                <div className="bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2">
-                    {error}
-                </div>
-            )}
+            {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
-            <div className="flex flex-wrap items-center gap-2">
-                {user && (
-                    <button
-                        onClick={() => setShowOnlyMine((v) => !v)}
-                        className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                            showOnlyMine
-                                ? "bg-frag-accent/15 border-frag-accent/50 text-frag-accent"
-                                : "bg-white/5 border-white/10 text-frag-muted hover:text-frag-text"
-                        }`}
-                    >
-                        My submissions
-                    </button>
-                )}
-                {!loading &&
-                    allTags.map((tag) => {
-                        const active = activeTagFilters.includes(tag);
-                        return (
-                            <button
-                                key={tag}
-                                onClick={() => toggleTagFilter(tag)}
-                                className={`text-xs px-2 py-1 rounded-full border transition-colors ${
-                                    active
-                                        ? "bg-frag-primary/15 border-frag-primary/50 text-frag-primary"
-                                        : "bg-white/5 border-white/10 text-frag-muted hover:text-frag-text"
-                                }`}
-                            >
-                                {tag}
-                            </button>
-                        );
-                    })}
-                {activeTagFilters.length > 0 && (
-                    <button
-                        onClick={() => setActiveTagFilters([])}
-                        className="text-xs text-frag-muted hover:text-frag-text"
-                    >
-                        clear tag filters
-                    </button>
-                )}
-            </div>
+            <FilterBar
+                user={user}
+                showOnlyMine={showOnlyMine}
+                onToggleMine={() => setShowOnlyMine((v) => !v)}
+                allTags={allTags}
+                activeTagFilters={activeTagFilters}
+                onToggleTag={toggleTagFilter}
+                onClearFilters={() => setActiveTagFilters([])}
+                loading={loading}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+            />
 
             {loading ? (
-                <p className="text-frag-muted text-sm">Loading...</p>
+                <LoadingState rows={5} label="Loading community fragments" />
             ) : fragments.length === 0 ? (
-                <p className="text-frag-muted text-sm">No community fragments yet.</p>
+                <EmptyState
+                    icon={Users}
+                    title="No community fragments yet"
+                    description="Be the first to share a macro, snippet, or monitor setup."
+                />
             ) : visibleFragments.length === 0 ? (
-                <p className="text-frag-muted text-sm">
-                    {showOnlyMine ? "You haven't shared anything yet." : "No fragments match the selected tags."}
-                </p>
+                <EmptyState
+                    title={
+                        showOnlyMine
+                            ? "You haven't shared anything yet"
+                            : "No fragments match your search or filters"
+                    }
+                    description={showOnlyMine ? "" : "Try clearing the tag filters or search above."}
+                />
             ) : (
-                <div className="space-y-2">
+                <>
+                    <div className="space-y-2">
                     {visibleFragments.map((row) => {
                         const isImported = importedIds.has(row.id);
                         const isImporting = importingId === row.id;
                         const isPreviewOpen = previewOpenId === row.id;
-                        const stats = isPreviewOpen ? summarizeMacroPayload(row.payload) : null;
                         const isOwner = user !== null && row.submitted_by === user.id;
                         const isDeleting = deletingId === row.id;
                         const isConfirmingDelete = confirmDeleteId === row.id;
@@ -434,304 +371,54 @@ export default function CommunityLibrary() {
                         const isSubmittingReport = submittingReportId === row.id;
 
                         return (
-                            <div
+                            <CommunityCard
                                 key={row.id}
-                                className="bg-frag-surface rounded-xl p-3 md:p-4 border border-white/5"
-                            >
-                                <div className="flex flex-wrap items-center justify-between gap-y-3">
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <p className="font-medium">{row.name}</p>
-                                            <span className="text-xs bg-frag-accent/15 text-frag-accent border border-frag-accent/30 rounded px-1.5 py-0.5">
-                                                {TYPE_LABELS[row.fragment_type] ?? row.fragment_type}
-                                            </span>
-                                            {isOwner && (
-                                                <span className="text-xs bg-white/5 text-frag-muted rounded px-1.5 py-0.5">
-                                                    yours
-                                                </span>
-                                            )}
-                                        </div>
-                                        <p className="text-xs text-frag-muted mt-0.5">
-                                            {row.download_count} downloads
-                                        </p>
-
-                                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                                            {row.tags.map((tag) =>
-                                                isOwner ? (
-                                                    <span
-                                                        key={tag}
-                                                        className="inline-flex items-center gap-1 text-xs bg-white/5 text-frag-text rounded-full px-2 py-0.5"
-                                                    >
-                                                        {tag}
-                                                        <button
-                                                            onClick={() => handleRemoveTag(row, tag)}
-                                                            className="text-frag-muted hover:text-frag-danger"
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    </span>
-                                                ) : (
-                                                    <span
-                                                        key={tag}
-                                                        className="text-xs bg-white/5 text-frag-muted rounded-full px-2 py-0.5"
-                                                    >
-                                                        {tag}
-                                                    </span>
-                                                )
-                                            )}
-                                            {isOwner &&
-                                                (isAddingTag ? (
-                                                    <input
-                                                        autoFocus
-                                                        type="text"
-                                                        value={tagDraft}
-                                                        onChange={(e) => setTagDraft(e.target.value)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === "Enter") handleAddTag(row);
-                                                            if (e.key === "Escape") {
-                                                                setAddingTagToId(null);
-                                                                setTagDraft("");
-                                                            }
-                                                        }}
-                                                        onBlur={() => handleAddTag(row)}
-                                                        placeholder="tag name"
-                                                        className="text-xs bg-frag-bg border border-white/10 rounded-full px-2 py-0.5 w-24 focus:outline-none focus:border-frag-primary"
-                                                    />
-                                                ) : (
-                                                    <button
-                                                        onClick={() => setAddingTagToId(row.id)}
-                                                        className="text-xs text-frag-muted hover:text-frag-primary"
-                                                    >
-                                                        + tag
-                                                    </button>
-                                                ))}
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 shrink-0 ml-4">
-                                        {isOwner && (
-                                            <button
-                                                onClick={() => handleDeleteClick(row.id)}
-                                                disabled={isDeleting}
-                                                className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 transition-colors ${
-                                                    isConfirmingDelete
-                                                        ? "bg-frag-danger text-white"
-                                                        : "bg-white/5 hover:bg-white/10 text-frag-text"
-                                                }`}
-                                            >
-                                                {isDeleting
-                                                    ? "Deleting..."
-                                                    : isConfirmingDelete
-                                                    ? "Confirm?"
-                                                    : "Delete"}
-                                            </button>
-                                        )}
-                                        {!isOwner && user && (
-                                            <button
-                                                onClick={() =>
-                                                    !hasReported &&
-                                                    setReportingId(isReportOpen ? null : row.id)
-                                                }
-                                                disabled={hasReported}
-                                                title={hasReported ? "You've already reported this" : "Report this fragment"}
-                                                className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-frag-muted hover:text-frag-danger disabled:opacity-40 disabled:hover:text-frag-muted transition-colors"
-                                            >
-                                                {hasReported ? "Reported" : "Report"}
-                                            </button>
-                                        )}
-                                        {isImported ? (
-                                            <span className="px-4 py-2 rounded-lg text-sm font-medium bg-frag-success/15 text-frag-success border border-frag-success/30">
-                                                Imported ✓
-                                            </span>
-                                        ) : (
-                                            <button
-                                                onClick={() =>
-                                                    setPreviewOpenId(isPreviewOpen ? null : row.id)
-                                                }
-                                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white/5 hover:bg-white/10 text-frag-text"
-                                            >
-                                                {isPreviewOpen ? "Hide preview" : "Preview"}
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {isReportOpen && (
-                                    <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
-                                        <p className="text-xs text-frag-muted">Why are you reporting this?</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {REPORT_REASONS.map((r) => (
-                                                <button
-                                                    key={r.value}
-                                                    onClick={() => handleSubmitReport(row, r.value)}
-                                                    disabled={isSubmittingReport}
-                                                    className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-frag-danger/10 hover:text-frag-danger text-frag-text disabled:opacity-40 transition-colors"
-                                                >
-                                                    {r.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <button
-                                            onClick={() => setReportingId(null)}
-                                            className="text-xs text-frag-muted hover:text-frag-text"
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
-                                )}
-
-                                {isPreviewOpen && (
-                                    <div className="mt-3 pt-3 border-t border-white/5 space-y-3">
-                                        {row.fragment_type === "macro" ? (
-                                            stats ? (
-                                                <div className="text-sm text-frag-text space-y-1">
-                                                    <p>
-                                                        <span className="text-frag-muted">
-                                                            This macro will simulate:
-                                                        </span>
-                                                    </p>
-                                                    <ul className="text-xs text-frag-muted space-y-0.5 pl-4 list-disc">
-                                                        <li>{stats.keyPresses} key press(es)</li>
-                                                        <li>{stats.mouseClicks} mouse click(s)</li>
-                                                        <li>{stats.mouseMoves} mouse movement(s)</li>
-                                                        <li>{stats.wheelScrolls} scroll event(s)</li>
-                                                    </ul>
-                                                    {stats.distinctKeys.length > 0 && (
-                                                        <p className="text-xs text-frag-muted">
-                                                            Keys involved: {stats.distinctKeys.join(", ")}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <p className="text-xs text-frag-muted">
-                                                    Couldn't parse this fragment's contents to preview.
-                                                </p>
-                                            )
-                                        ) : row.fragment_type === "clipboard_snippet" ? (
-                                            <div className="text-sm text-frag-text">
-                                                <p className="text-xs text-frag-muted mb-1">Snippet content:</p>
-                                                <p className="bg-frag-bg border border-white/10 rounded-lg px-3 py-2 text-sm break-words whitespace-pre-wrap max-h-32 overflow-y-auto">
-                                                    {typeof row.payload === "object" &&
-                                                    row.payload !== null &&
-                                                    "content" in row.payload
-                                                        ? String((row.payload as { content: unknown }).content)
-                                                        : "(couldn't read content)"}
-                                                </p>
-                                            </div>
-                                        ) : row.fragment_type === "monitor_alert_rule" ? (
-                                            <div className="text-sm text-frag-text">
-                                                <p className="text-xs text-frag-muted mb-1">This alert rule:</p>
-                                                {(() => {
-                                                    const p = row.payload as {
-                                                        metric?: string;
-                                                        comparison?: string;
-                                                        threshold?: number;
-                                                    };
-                                                    if (
-                                                        typeof p !== "object" ||
-                                                        p === null ||
-                                                        !p.metric ||
-                                                        !p.comparison ||
-                                                        p.threshold === undefined
-                                                    ) {
-                                                        return (
-                                                            <p className="text-xs text-frag-muted">
-                                                                (couldn't read rule details)
-                                                            </p>
-                                                        );
-                                                    }
-                                                    return (
-                                                        <p className="bg-frag-bg border border-white/10 rounded-lg px-3 py-2 text-sm">
-                                                            Notifies when{" "}
-                                                            <span className="text-frag-primary">
-                                                                {p.metric.toUpperCase()}
-                                                            </span>{" "}
-                                                            is {p.comparison}{" "}
-                                                            <span className="text-frag-primary">
-                                                                {p.threshold}%
-                                                            </span>
-                                                        </p>
-                                                    );
-                                                })()}
-                                            </div>
-                                        ) : row.fragment_type === "monitor_layout" ? (
-                                            <div className="text-sm text-frag-text">
-                                                <p className="text-xs text-frag-muted mb-1">
-                                                    This layout arranges Monitor as:
-                                                </p>
-                                                {(() => {
-                                                    const p = row.payload as {
-                                                        widgets?: { id: string; visible: boolean }[];
-                                                    };
-                                                    if (!p?.widgets || !Array.isArray(p.widgets)) {
-                                                        return (
-                                                            <p className="text-xs text-frag-muted">
-                                                                (couldn't read layout details)
-                                                            </p>
-                                                        );
-                                                    }
-                                                    const labels: Record<string, string> = {
-                                                        stats: "Stats Cards",
-                                                        alerts: "Alert Rules Panel",
-                                                        cpu_graph: "CPU Graph",
-                                                        ram_graph: "RAM Graph",
-                                                    };
-                                                    return (
-                                                        <ol className="bg-frag-bg border border-white/10 rounded-lg px-3 py-2 text-xs space-y-1 list-decimal pl-6">
-                                                            {p.widgets.map((w) => (
-                                                                <li
-                                                                    key={w.id}
-                                                                    className={w.visible ? "" : "text-frag-muted/60 line-through"}
-                                                                >
-                                                                    {labels[w.id] ?? w.id}
-                                                                    {!w.visible && " (hidden)"}
-                                                                </li>
-                                                            ))}
-                                                        </ol>
-                                                    );
-                                                })()}
-                                                <p className="text-xs text-frag-muted mt-1">
-                                                    Importing replaces your current Monitor layout.
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <p className="text-xs text-frag-muted">
-                                                No preview available for this fragment type.
-                                            </p>
-                                        )}
-
-
-                                        {row.fragment_type === "macro" && (
-                                            <p className="text-xs text-frag-danger">
-                                                Once imported, playing this macro will actually perform
-                                                these actions on your computer.
-                                            </p>
-                                        )}
-
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => handleImport(row)}
-                                                disabled={
-                                                    isImporting ||
-                                                    (row.fragment_type === "macro" && !stats)
-                                                }
-                                                className="px-3 py-1.5 rounded-lg bg-frag-primary hover:bg-frag-primary/80 text-frag-bg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                                            >
-                                                {isImporting ? "Importing..." : "Import"}
-                                            </button>
-                                            <button
-                                                onClick={() => setPreviewOpenId(null)}
-                                                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-frag-text text-sm font-medium"
-                                            >
-                                                Cancel
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
+                                row={row}
+                                isOwner={isOwner}
+                                canReport={user !== null && !isOwner}
+                                isImported={isImported}
+                                isImporting={isImporting}
+                                isPreviewOpen={isPreviewOpen}
+                                isDeleting={isDeleting}
+                                isConfirmingDelete={isConfirmingDelete}
+                                isAddingTag={isAddingTag}
+                                tagDraft={tagDraft}
+                                isReportOpen={isReportOpen}
+                                hasReported={hasReported}
+                                isSubmittingReport={isSubmittingReport}
+                                onTogglePreview={() =>
+                                    setPreviewOpenId(isPreviewOpen ? null : row.id)
+                                }
+                                onDeleteClick={() => handleDeleteClick(row.id)}
+                                onAddTag={() => handleAddTag(row)}
+                                onRemoveTag={(tag) => handleRemoveTag(row, tag)}
+                                onTagDraftChange={setTagDraft}
+                                onOpenTagInput={() => setAddingTagToId(row.id)}
+                                onCloseTagInput={() => {
+                                    setAddingTagToId(null);
+                                    setTagDraft("");
+                                }}
+                                onToggleReport={() =>
+                                    setReportingId(isReportOpen ? null : row.id)
+                                }
+                                onSubmitReport={(reason) => handleSubmitReport(row, reason)}
+                                onCancelReport={() => setReportingId(null)}
+                                onImport={() => handleImport(row)}
+                                onCancelPreview={() => setPreviewOpenId(null)}
+                            />
                         );
                     })}
-                </div>
+                    </div>
+                    {hasMore && (
+                        <button
+                            onClick={loadMore}
+                            disabled={loadingMore}
+                            className="w-full mt-2 py-2 rounded-lg bg-frag-surface border border-frag-border text-sm text-frag-muted hover:text-frag-text disabled:opacity-40 transition-colors"
+                        >
+                            {loadingMore ? "Loading..." : "Load more"}
+                        </button>
+                    )}
+                </>
             )}
         </div>
     );

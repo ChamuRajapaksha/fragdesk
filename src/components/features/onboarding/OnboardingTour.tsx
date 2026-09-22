@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Command, Users, Activity, X } from 'lucide-react';
+import { Command, X } from 'lucide-react';
+import { getFeature } from '../../../features/registry';
 
 interface Step {
   icon: React.ElementType;
@@ -9,42 +10,46 @@ interface Step {
   description: string;
 }
 
-const STEPS: Step[] = [
-  {
-    icon: Zap,
-    title: 'Welcome to FragDesk',
-    description:
-      'A gaming companion, productivity utility, and community fragment aggregator, all in one. A quick tour of the essentials before you dive in.',
-  },
-  {
-    icon: Zap,
-    title: 'Record macros anywhere',
-    description:
-      'Press F9 from anywhere — even if FragDesk isn\'t focused — to start or stop recording keyboard and mouse input. Give a macro its own hotkey later for instant playback during a game.',
-  },
-  {
-    icon: Command,
-    title: 'Ctrl+K for instant search',
-    description:
-      'Jump to any tab or play any saved macro by name, without touching the mouse. Works from anywhere in the app.',
-  },
-  {
-    icon: Users,
-    title: 'Share what you build',
-    description:
-      'Macros, clipboard snippets, monitor alert rules, even your Monitor layout — share any of them to the Community Library, or import what others have shared. Every macro shows a preview of what it actually does before you import it.',
-  },
-  {
-    icon: Activity,
-    title: 'Monitor with alerts',
-    description:
-      'Track CPU and RAM live, set alert rules (like "notify me when CPU is above 90%"), and rearrange the page layout to your liking from the Customize Layout button.',
-  },
-];
-
 export default function OnboardingTour() {
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
+
+  const MACROS_ICON = getFeature('macros')?.icon ?? Command;
+  const COMMUNITY_ICON = getFeature('community')?.icon ?? Command;
+  const MONITOR_ICON = getFeature('monitor')?.icon ?? Command;
+
+  const STEPS: Step[] = [
+    {
+      icon: MACROS_ICON,
+      title: 'Welcome to FragDesk',
+      description:
+        'A gaming companion, productivity utility, and community fragment aggregator, all in one. A quick tour of the essentials before you dive in.',
+    },
+    {
+      icon: MACROS_ICON,
+      title: 'Record macros anywhere',
+      description:
+        'Press F9 from anywhere — even if FragDesk isn\'t focused — to start or stop recording keyboard and mouse input. Give a macro its own hotkey later for instant playback during a game.',
+    },
+    {
+      icon: Command,
+      title: 'Ctrl+K for instant search',
+      description:
+        'Jump to any tab or play any saved macro by name, without touching the mouse. Works from anywhere in the app.',
+    },
+    {
+      icon: COMMUNITY_ICON,
+      title: 'Share what you build',
+      description:
+        'Macros, clipboard snippets, monitor alert rules, even your Monitor layout — share any of them to the Community Library, or import what others have shared. Every macro shows a preview of what it actually does before you import it.',
+    },
+    {
+      icon: MONITOR_ICON,
+      title: 'Monitor with alerts',
+      description:
+        'Track CPU and RAM live, set alert rules (like "notify me when CPU is above 90%"), and rearrange the page layout to your liking from the Customize Layout button.',
+    },
+  ];
 
   useEffect(() => {
     invoke<boolean>('has_completed_onboarding')

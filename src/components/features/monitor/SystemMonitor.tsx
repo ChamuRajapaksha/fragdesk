@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { motion } from 'framer-motion';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { Cpu, MemoryStick, Activity, Bell, X, LayoutGrid, ArrowUp, ArrowDown, Eye, EyeOff, Gauge, Gpu } from 'lucide-react';
+import { Cpu, MemoryStick, Activity, Bell, X, LayoutGrid, ArrowUp, ArrowDown, Eye, EyeOff, Gauge, Gpu, type LucideIcon } from 'lucide-react';
 import { extractErrorMessage, isSupabaseConfigured, supabase } from '../../../community/supabaseClient';
 import { useAuth } from '../../../community/useAuth';
+import { Button, ErrorBanner, LoadingState, PageHeader, StatCard } from '../../ui';
+import type { NavId } from '../../../features/registry';
 
 interface SystemMonitorProps {
-  setActiveTab: (tab: string) => void;
+  setActiveTab: (tab: NavId) => void;
 }
 
 interface SystemStats {
@@ -75,6 +76,88 @@ const WIDGET_LABELS: Record<string, string> = {
   fps: 'FPS / 1% Lows (via RTSS)',
 };
 
+const TOOLTIP_STYLE = {
+  backgroundColor: 'rgb(var(--frag-surface))',
+  border: '1px solid rgb(var(--frag-border))',
+  borderRadius: '8px',
+  color: 'rgb(var(--frag-text))',
+};
+
+// Theme colors are stored as bare RGB triplets ("0 217 255"); SVG attributes
+// (stroke/fill/stopColor) need a concrete color, so resolve once per render.
+function resolveColor(variable: string): string {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(variable)
+    .trim();
+  const parts = raw.split(/\s+/).map((p) => Number(p));
+  if (parts.length === 3 && parts.every((p) => !Number.isNaN(p))) {
+    return `rgb(${parts.join(', ')})`;
+  }
+  return raw || 'currentColor';
+}
+
+function GraphCard({
+  title,
+  icon: Icon,
+  dataKey,
+  colorVar,
+  gradientId,
+  iconClass,
+  data,
+}: {
+  title: string;
+  icon: LucideIcon;
+  dataKey: 'cpu' | 'ram' | 'gpu';
+  colorVar: string;
+  gradientId: string;
+  iconClass: string;
+  data: DataPoint[];
+}) {
+  const lineColor = resolveColor(colorVar);
+  const mutedColor = resolveColor('--frag-muted');
+  const borderColor = resolveColor('--frag-border');
+  return (
+    <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
+      <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
+        <Icon className={iconClass} size={20} />
+        {title}
+      </h3>
+      <ResponsiveContainer width="100%" height={250}>
+        <AreaChart data={data}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={lineColor} stopOpacity={0.3} />
+              <stop offset="95%" stopColor={lineColor} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke={borderColor} />
+          <XAxis
+            dataKey="time"
+            stroke={mutedColor}
+            tick={{ fill: mutedColor, fontSize: 12 }}
+            tickLine={{ stroke: mutedColor }}
+          />
+          <YAxis
+            stroke={mutedColor}
+            tick={{ fill: mutedColor, fontSize: 12 }}
+            tickLine={{ stroke: mutedColor }}
+            domain={[0, 100]}
+            width={40}
+          />
+          <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: mutedColor }} />
+          <Area
+            type="monotone"
+            dataKey={dataKey}
+            stroke={lineColor}
+            strokeWidth={2}
+            fill={`url(#${gradientId})`}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   const { user } = useAuth();
   const [stats, setStats] = useState<SystemStats | null>(null);
@@ -137,6 +220,16 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   useEffect(() => {
     rulesRef.current = rules;
   }, [rules]);
+
+  // Escape closes the customize-layout dialog.
+  useEffect(() => {
+    if (!showCustomize) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowCustomize(false);
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [showCustomize]);
 
   const loadRules = async () => {
     try {
@@ -462,8 +555,9 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   if (!stats) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-frag-muted">Loading system stats...</div>
+      <div className="min-h-full bg-frag-bg text-frag-text p-4 md:p-6">
+        <PageHeader title="System Monitor" />
+        <LoadingState rows={4} label="Loading system statistics" />
       </div>
     );
   }
@@ -471,151 +565,44 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   const widgetContent: Record<string, ReactNode> = {
     stats: (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <motion.div
-          className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
-          whileHover={{ y: -4 }}
-          transition={{ type: 'spring', stiffness: 300 }}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-frag-primary/10 rounded-lg">
-                <Cpu className="text-frag-primary" size={24} />
-              </div>
-              <div>
-                <p className="text-frag-muted text-sm">CPU Usage</p>
-                <p className="text-xs text-frag-muted">{stats.cpu_count} cores</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-end gap-2">
-            <p className="text-4xl font-bold text-frag-primary">{stats.cpu_usage.toFixed(1)}</p>
-            <p className="text-frag-muted text-xl mb-1">%</p>
-          </div>
-          <div className="mt-4 h-2 bg-frag-bg rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-frag-primary"
-              initial={{ width: 0 }}
-              animate={{ width: `${stats.cpu_usage}%` }}
-              transition={{ duration: 0.5 }}
-            />
-          </div>
-        </motion.div>
-
-        <motion.div
-          className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
-          whileHover={{ y: -4 }}
-          transition={{ type: 'spring', stiffness: 300 }}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-frag-accent/10 rounded-lg">
-                <MemoryStick className="text-frag-accent" size={24} />
-              </div>
-              <div>
-                <p className="text-frag-muted text-sm">RAM Usage</p>
-                <p className="text-xs text-frag-muted truncate">
-                  {formatBytes(stats.ram_used)} / {formatBytes(stats.ram_total)}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-end gap-2">
-            <p className="text-4xl font-bold text-frag-accent">{stats.ram_percent.toFixed(1)}</p>
-            <p className="text-frag-muted text-xl mb-1">%</p>
-          </div>
-          <div className="mt-4 h-2 bg-frag-bg rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-frag-accent"
-              initial={{ width: 0 }}
-              animate={{ width: `${stats.ram_percent}%` }}
-              transition={{ duration: 0.5 }}
-            />
-          </div>
-        </motion.div>
-
+        <StatCard
+          icon={Cpu}
+          label="CPU Usage"
+          value={stats.cpu_usage.toFixed(1)}
+          accent="text-frag-primary"
+          detail={`${stats.cpu_count} cores`}
+        />
+        <StatCard
+          icon={MemoryStick}
+          label="RAM Usage"
+          value={stats.ram_percent.toFixed(1)}
+          accent="text-frag-accent"
+          detail={`${formatBytes(stats.ram_used)} / ${formatBytes(stats.ram_total)}`}
+        />
         {gpuStats ? (
-          <motion.div
-            className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
-            whileHover={{ y: -4 }}
-            transition={{ type: 'spring', stiffness: 300 }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="p-3 bg-frag-warning/10 rounded-lg shrink-0">
-                  <Gpu className="text-frag-warning" size={24} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-frag-muted text-sm">GPU Usage</p>
-                  <p className="text-xs text-frag-muted truncate">{gpuStats.name}</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-end gap-2">
-              <p className="text-4xl font-bold text-frag-warning">{gpuStats.usage_percent.toFixed(1)}</p>
-              <p className="text-frag-muted text-xl mb-1">%</p>
-            </div>
-            <div className="mt-2">
-              <p className="text-xs text-frag-muted truncate">
-                {formatBytes(gpuStats.memory_used)} / {formatBytes(gpuStats.memory_total)} VRAM
-              </p>
-            </div>
-            <div className="mt-2 h-2 bg-frag-bg rounded-full overflow-hidden">
-              <motion.div
-                className="h-full bg-frag-warning"
-                initial={{ width: 0 }}
-                animate={{ width: `${gpuStats.usage_percent}%` }}
-                transition={{ duration: 0.5 }}
-              />
-            </div>
-          </motion.div>
+          <StatCard
+            icon={Gpu}
+            label="GPU Usage"
+            value={gpuStats.usage_percent.toFixed(1)}
+            accent="text-frag-warning"
+            detail={`${gpuStats.name} · ${formatBytes(gpuStats.memory_used)} / ${formatBytes(gpuStats.memory_total)} VRAM`}
+          />
         ) : (
-          <motion.div
-            className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
-            whileHover={{ y: -4 }}
-            transition={{ type: 'spring', stiffness: 300 }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-frag-warning/10 rounded-lg">
-                  <Gpu className="text-frag-warning/60" size={24} />
-                </div>
-                <div>
-                  <p className="text-frag-muted text-sm">GPU Usage</p>
-                  <p className="text-xs text-frag-muted">No GPU detected</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-end gap-2">
-              <p className="text-2xl font-bold text-frag-muted">N/A</p>
-            </div>
-          </motion.div>
+          <StatCard
+            icon={Gpu}
+            label="GPU Usage"
+            value="N/A"
+            accent="text-frag-warning"
+            detail="No GPU detected"
+          />
         )}
-
-        <motion.div
-          className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6"
-          whileHover={{ y: -4 }}
-          transition={{ type: 'spring', stiffness: 300 }}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-frag-success/10 rounded-lg">
-                <Activity className="text-frag-success" size={24} />
-              </div>
-              <div>
-                <p className="text-frag-muted text-sm">Monitoring</p>
-                <p className="text-xs text-frag-muted">Update every 1s</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-end gap-2">
-            <p className="text-2xl font-bold text-frag-success">
-              {isMonitoring ? 'Active' : 'Paused'}
-            </p>
-          </div>
-          <div className="mt-4">
-            <p className="text-xs text-frag-muted">{history.length} data points collected</p>
-          </div>
-        </motion.div>
+        <StatCard
+          icon={Activity}
+          label="Monitoring"
+          value={isMonitoring ? 'Active' : 'Paused'}
+          accent="text-frag-success"
+          detail={`Update every 1s · ${history.length} data points`}
+        />
       </div>
     ),
 
@@ -698,7 +685,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                     onClick={() => handleToggleRule(rule.id)}
                     className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${rule.enabled ? 'bg-frag-success' : 'bg-frag-border'}`}
                   >
-                    <span className={`absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${rule.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
+                    <span className={`absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-frag-text transition-transform ${rule.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
                   </button>
                   <div className="min-w-0">
                     <p className="text-sm text-frag-text font-medium truncate">{rule.name}</p>
@@ -735,75 +722,39 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     ),
 
     cpu_graph: (
-      <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
-        <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
-          <Cpu className="text-frag-primary" size={20} />
-          CPU Usage Over Time
-        </h3>
-        <ResponsiveContainer width="100%" height={250}>
-          <AreaChart data={history}>
-            <defs>
-              <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--frag-primary)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="var(--frag-primary)" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--frag-border)" />
-            <XAxis dataKey="time" stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} />
-            <YAxis stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} domain={[0, 100]} />
-            <Tooltip contentStyle={{ backgroundColor: 'var(--frag-surface)', border: '1px solid var(--frag-border)', borderRadius: '8px', color: 'var(--frag-text)' }} />
-            <Area type="monotone" dataKey="cpu" stroke="var(--frag-primary)" strokeWidth={2} fill="url(#cpuGradient)" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      <GraphCard
+        title="CPU Usage Over Time"
+        icon={Cpu}
+        dataKey="cpu"
+        colorVar="--frag-primary"
+        gradientId="cpuGradient"
+        iconClass="text-frag-primary"
+        data={history}
+      />
     ),
 
     ram_graph: (
-      <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
-        <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
-          <MemoryStick className="text-frag-accent" size={20} />
-          RAM Usage Over Time
-        </h3>
-        <ResponsiveContainer width="100%" height={250}>
-          <AreaChart data={history}>
-            <defs>
-              <linearGradient id="ramGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--frag-accent)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="var(--frag-accent)" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--frag-border)" />
-            <XAxis dataKey="time" stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} />
-            <YAxis stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} domain={[0, 100]} />
-            <Tooltip contentStyle={{ backgroundColor: 'var(--frag-surface)', border: '1px solid var(--frag-border)', borderRadius: '8px', color: 'var(--frag-text)' }} />
-            <Area type="monotone" dataKey="ram" stroke="var(--frag-accent)" strokeWidth={2} fill="url(#ramGradient)" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      <GraphCard
+        title="RAM Usage Over Time"
+        icon={MemoryStick}
+        dataKey="ram"
+        colorVar="--frag-accent"
+        gradientId="ramGradient"
+        iconClass="text-frag-accent"
+        data={history}
+      />
     ),
 
     gpu_graph: (
-      <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
-        <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
-          <Gpu className="text-frag-warning" size={20} />
-          GPU Usage Over Time
-        </h3>
-        <ResponsiveContainer width="100%" height={250}>
-          <AreaChart data={history}>
-            <defs>
-              <linearGradient id="gpuGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--frag-warning)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="var(--frag-warning)" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--frag-border)" />
-            <XAxis dataKey="time" stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} />
-            <YAxis stroke="var(--frag-muted)" tick={{ fill: 'var(--frag-muted)' }} tickLine={{ stroke: 'var(--frag-muted)' }} domain={[0, 100]} />
-            <Tooltip contentStyle={{ backgroundColor: 'var(--frag-surface)', border: '1px solid var(--frag-border)', borderRadius: '8px', color: 'var(--frag-text)' }} />
-            <Area type="monotone" dataKey="gpu" stroke="var(--frag-warning)" strokeWidth={2} fill="url(#gpuGradient)" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      <GraphCard
+        title="GPU Usage Over Time"
+        icon={Gpu}
+        dataKey="gpu"
+        colorVar="--frag-warning"
+        gradientId="gpuGradient"
+        iconClass="text-frag-warning"
+        data={history}
+      />
     ),
 
     fps: (
@@ -921,82 +872,108 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   };
 
   return (
-    <div>
-        <div className="flex flex-wrap items-center justify-between mb-4 md:mb-6 gap-4 gap-y-3">
-        <div className="min-w-0">
-          <h1 className="text-3xl font-bold text-frag-text mb-2 truncate">System Monitor</h1>
-          <p className="text-frag-muted truncate">
-            {isMonitoring ? '🟢 Real-time system performance monitoring' : 'Monitoring paused'}
-          </p>
-        </div>
-        <button
-          onClick={() => setShowCustomize((v) => !v)}
-          className="px-3 py-2 rounded-lg bg-frag-surface border border-frag-border text-frag-muted hover:text-frag-text flex items-center gap-2 text-sm shrink-0"
-        >
-          <LayoutGrid size={16} />
-          Customize Layout
-        </button>
-      </div>
+    <div className="min-h-full bg-frag-bg text-frag-text p-4 md:p-6">
+      <PageHeader
+        title="System Monitor"
+        subtitle={
+          isMonitoring ? 'Real-time system performance monitoring' : 'Monitoring paused'
+        }
+        accent={<Activity size={22} className="text-frag-primary" />}
+        actions={
+          <Button variant="secondary" onClick={() => setShowCustomize((v) => !v)}>
+            <LayoutGrid size={16} />
+            Customize Layout
+          </Button>
+        }
+      />
 
       {showCustomize && (
-        <div className="bg-frag-surface border border-frag-border rounded-lg p-4 mb-6 space-y-2">
-          {layout.map((w, i) => (
-            <div key={w.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-3 py-2 gap-2">
-              <span className={`text-sm min-w-0 truncate ${w.visible ? 'text-frag-text' : 'text-frag-muted line-through'}`}>
-                {WIDGET_LABELS[w.id] ?? w.id}
-              </span>
-              <div className="flex items-center gap-1 shrink-0">
-                <button onClick={() => moveWidget(w.id, -1)} disabled={i === 0} className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted">
-                  <ArrowUp size={14} />
-                </button>
-                <button onClick={() => moveWidget(w.id, 1)} disabled={i === layout.length - 1} className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted">
-                  <ArrowDown size={14} />
-                </button>
-                <button onClick={() => toggleWidgetVisibility(w.id)} className="p-1.5 rounded hover:bg-frag-surface text-frag-muted">
-                  {w.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-                </button>
-              </div>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="customize-dialog-title"
+          onClick={() => setShowCustomize(false)}
+        >
+          <div
+            className="w-full max-w-md bg-frag-surface border border-frag-border rounded-lg p-4 space-y-2 shadow-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <h3 id="customize-dialog-title" className="text-lg font-bold text-frag-text">
+                Customize Layout
+              </h3>
+              <button
+                onClick={() => setShowCustomize(false)}
+                aria-label="Close customize layout dialog"
+                className="p-1.5 rounded text-frag-muted hover:text-frag-text hover:bg-frag-bg"
+              >
+                <X size={18} />
+              </button>
             </div>
-          ))}
-          <div className="flex items-center justify-between pt-2 border-t border-frag-border gap-2">
-            <button onClick={resetLayout} className="text-xs text-frag-muted hover:text-frag-text shrink-0">
-              Reset to default
-            </button>
-            <div className="flex items-center gap-2 min-w-0">
-              {layoutShared ? (
-                <span className="text-xs text-frag-success shrink-0">Shared ✓</span>
-              ) : (
-                <>
-                  <input
-                    type="text"
-                    value={layoutNameDraft}
-                    onChange={(e) => setLayoutNameDraft(e.target.value)}
-                    placeholder="Name this layout..."
-                    className="bg-frag-bg border border-frag-border rounded-lg px-2 py-1 text-xs text-frag-text w-full min-w-0"
-                  />
-                  <button
-                    onClick={handleShareLayout}
-                    disabled={sharingLayout || !layoutNameDraft.trim()}
-                    className="text-xs px-2 py-1 rounded-lg bg-frag-primary text-frag-bg font-medium disabled:opacity-40 shrink-0"
-                  >
-                    {sharingLayout ? '...' : 'Share layout'}
+            {layout.map((w, i) => (
+              <div key={w.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-3 py-2 gap-2">
+                <span className={`text-sm min-w-0 truncate ${w.visible ? 'text-frag-text' : 'text-frag-muted line-through'}`}>
+                  {WIDGET_LABELS[w.id] ?? w.id}
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => moveWidget(w.id, -1)} disabled={i === 0} aria-label={`Move ${WIDGET_LABELS[w.id] ?? w.id} up`} className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted">
+                    <ArrowUp size={14} />
                   </button>
-                </>
-              )}
+                  <button onClick={() => moveWidget(w.id, 1)} disabled={i === layout.length - 1} aria-label={`Move ${WIDGET_LABELS[w.id] ?? w.id} down`} className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted">
+                    <ArrowDown size={14} />
+                  </button>
+                  <button
+                    onClick={() => toggleWidgetVisibility(w.id)}
+                    aria-pressed={w.visible}
+                    aria-label={`${w.visible ? 'Hide' : 'Show'} ${WIDGET_LABELS[w.id] ?? w.id}`}
+                    className="p-1.5 rounded hover:bg-frag-surface text-frag-muted"
+                  >
+                    {w.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                  </button>
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-2 border-t border-frag-border gap-2">
+              <button onClick={resetLayout} className="text-xs text-frag-muted hover:text-frag-text shrink-0">
+                Reset to default
+              </button>
+              <div className="flex items-center gap-2 min-w-0">
+                {layoutShared ? (
+                  <span className="text-xs text-frag-success shrink-0">Shared ✓</span>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      value={layoutNameDraft}
+                      onChange={(e) => setLayoutNameDraft(e.target.value)}
+                      placeholder="Name this layout..."
+                      className="bg-frag-bg border border-frag-border rounded-lg px-2 py-1 text-xs text-frag-text w-full min-w-0 focus:outline-none focus:border-frag-primary"
+                    />
+                    <button
+                      onClick={handleShareLayout}
+                      disabled={sharingLayout || !layoutNameDraft.trim()}
+                      className="text-xs px-2 py-1 rounded-lg bg-frag-primary text-frag-bg font-medium disabled:opacity-40 shrink-0"
+                    >
+                      {sharingLayout ? '...' : 'Share layout'}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {firedAlerts.length > 0 && (
-        <div className="space-y-2 mb-6">
+        <div className="space-y-2 mb-6" aria-live="polite">
           {firedAlerts.map((alert, i) => (
             <div key={`${alert.ruleId}-${i}`} className="flex items-center justify-between bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-3 gap-3">
               <span className="flex items-center gap-2 min-w-0 break-words">
                 <Bell size={16} className="shrink-0" />
                 {alert.message}
               </span>
-              <button onClick={() => dismissAlert(alert.ruleId)} className="hover:text-white shrink-0">
+              <button onClick={() => dismissAlert(alert.ruleId)} aria-label="Dismiss alert" className="hover:text-frag-text shrink-0">
                 <X size={16} />
               </button>
             </div>
@@ -1005,8 +982,8 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       )}
 
       {error && (
-        <div className="mb-4 bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2">
-          {error}
+        <div className="mb-6">
+          <ErrorBanner message={error} onDismiss={() => setError(null)} />
         </div>
       )}
 

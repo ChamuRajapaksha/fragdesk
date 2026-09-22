@@ -1,54 +1,30 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { Upload, Zap } from "lucide-react";
 import { extractErrorMessage, isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
 import { useAuth } from "../../../community/useAuth";
+import MacroCard from "./MacroCard";
+import {
+    formatDuration,
+    type MacroSummary,
+    type PlaybackProgress,
+    type RecordingPreview,
+} from "./macroTypes";
+import type { NavId } from "../../../features/registry";
+import {
+    Button,
+    EmptyState,
+    ErrorBanner,
+    LoadingState,
+    PageHeader,
+    useToast,
+} from "../../ui";
 
-
-
-interface MacroSummary {
-    id: string;
-    name: string;
-    created_at: number; // unix seconds
-    event_count: number;
-    duration_ms: number;
-    hotkey: string | null;
-    tags: string[];
-    source: string | null; // null = recorded/imported locally, "community", "starter"
-}
-
-interface RecordingPreview {
-    event_count: number;
-    duration_ms: number;
-}
-
-interface PlaybackProgress {
-    macro_id: string;
-    current_index: number;
-    total: number;
-    repeat_index: number;
-    repeat_total: number;
-}
-
-interface PlaybackFinished {
-    macro_id: string;
-    cancelled: boolean;
-}
-
-function formatDuration(ms: number): string {
-    const seconds = ms / 1000;
-    if (seconds < 60) return `${seconds.toFixed(1)}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.round(seconds % 60);
-    return `${mins}m ${secs}s`;
-}
-
-function formatDate(unixSeconds: number): string {
-    return new Date(unixSeconds * 1000).toLocaleString();
-}
-
-export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: string) => void }) {
+export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: NavId) => void }) {
+    const { toast } = useToast();
     const [macros, setMacros] = useState<MacroSummary[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isRecording, setIsRecording] = useState(false);
     const [liveCount, setLiveCount] = useState(0);
     const [pendingPreview, setPendingPreview] = useState<RecordingPreview | null>(null);
@@ -94,9 +70,26 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
     const [tagDraft, setTagDraft] = useState("");
 
     const nameInputRef = useRef<HTMLInputElement>(null);
-    const renameInputRef = useRef<HTMLInputElement>(null);
     const confirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const importFileInputRef = useRef<HTMLInputElement>(null);
+
+    // Ref mirrors so confirm/rename handlers keep stable identities while
+    // still observing the latest armed-confirmation / rename-in-progress value.
+    const confirmDeleteIdRef = useRef<string | null>(null);
+    const confirmShareIdRef = useRef<string | null>(null);
+    const renamingIdRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        confirmDeleteIdRef.current = confirmDeleteId;
+    }, [confirmDeleteId]);
+
+    useEffect(() => {
+        confirmShareIdRef.current = confirmShareId;
+    }, [confirmShareId]);
+
+    useEffect(() => {
+        renamingIdRef.current = renamingId;
+    }, [renamingId]);
 
     const { user } = useAuth();
 
@@ -135,13 +128,10 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             (e) => setProgress(e.payload)
         );
 
-        const unlistenPlaybackFinished = listen<PlaybackFinished>(
-            "macro-playback-finished",
-            () => {
-                setPlayingId(null);
-                setProgress(null);
-            }
-        );
+        const unlistenPlaybackFinished = listen("macro-playback-finished", () => {
+            setPlayingId(null);
+            setProgress(null);
+        });
 
         return () => {
             unlistenRecording.then((f) => f());
@@ -152,6 +142,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
             if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -161,12 +152,6 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             setTimeout(() => nameInputRef.current?.focus(), 50);
         }
     }, [pendingPreview]);
-
-    useEffect(() => {
-        if (renamingId) {
-            setTimeout(() => renameInputRef.current?.focus(), 50);
-        }
-    }, [renamingId]);
 
     useEffect(() => {
         if (!capturingHotkeyId) return;
@@ -188,11 +173,12 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             if (e.shiftKey) mods.push("Shift");
             const combo = [...mods, e.code].join("+");
 
-            void handleSetHotkey(targetId, combo);   // <-- use targetId instead
+            void handleSetHotkey(targetId, combo);
         }
 
         document.addEventListener("keydown", onKeyDown, true);
         return () => document.removeEventListener("keydown", onKeyDown, true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [capturingHotkeyId]);
 
     useEffect(() => {
@@ -215,25 +201,31 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             const combo = [...mods, e.code].join("+");
 
             invoke("set_record_hotkey", { hotkey: combo })
-                .then(() => setRecordHotkey(combo))
+                .then(() => {
+                    setRecordHotkey(combo);
+                    toast("Recording hotkey updated.", "success");
+                })
                 .catch((err) => setError(String(err)))
                 .finally(() => setIsCapturingRecordHotkey(false));
         }
 
         document.addEventListener("keydown", onKeyDown, true);
         return () => document.removeEventListener("keydown", onKeyDown, true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isCapturingRecordHotkey]);
 
-    async function refreshMacros() {
+    const refreshMacros = useCallback(async () => {
         try {
             const result = await invoke<MacroSummary[]>("get_macros");
             setMacros(result);
         } catch (err) {
             setError(String(err));
+        } finally {
+            setIsLoading(false);
         }
-    }
+    }, []);
 
-    async function handleStartRecording() {
+    const handleStartRecording = useCallback(async () => {
         setError(null);
         try {
             await invoke("start_macro_recording");
@@ -242,9 +234,9 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
         } catch (err) {
             setError(String(err));
         }
-    }
+    }, []);
 
-    async function handleStopRecording() {
+    const handleStopRecording = useCallback(async () => {
         try {
             const preview = await invoke<RecordingPreview>("stop_macro_recording");
             setIsRecording(false);
@@ -257,9 +249,9 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
         } catch (err) {
             setError(String(err));
         }
-    }
+    }, []);
 
-    async function handleSaveMacro() {
+    const handleSaveMacro = useCallback(async () => {
         const name = macroName.trim();
         if (!name) return;
         try {
@@ -267,21 +259,22 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             setPendingPreview(null);
             setMacroName("");
             await refreshMacros();
+            toast("Macro saved.", "success");
         } catch (err) {
             setError(String(err));
         }
-    }
+    }, [macroName, refreshMacros, toast]);
 
-    async function handleDiscardRecording() {
+    const handleDiscardRecording = useCallback(async () => {
         try {
             await invoke("discard_macro_recording");
         } finally {
             setPendingPreview(null);
             setMacroName("");
         }
-    }
+    }, []);
 
-    async function handlePlay(id: string) {
+    const handlePlay = useCallback(async (id: string) => {
         setError(null);
         try {
             setPlayingId(id);
@@ -290,23 +283,23 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             setPlayingId(null);
             setError(String(err));
         }
-    }
+    }, [speed, repeat]);
 
-    async function handleStopPlayback() {
+    const handleStopPlayback = useCallback(async () => {
         try {
             await invoke("stop_macro_playback");
         } catch (err) {
             setError(String(err));
         }
-    }
+    }, []);
 
-    function startRename(m: MacroSummary) {
+    const startRename = useCallback((m: MacroSummary) => {
         setRenamingId(m.id);
         setRenameDraft(m.name);
-    }
+    }, []);
 
-    async function commitRename() {
-        const id = renamingId;
+    const commitRename = useCallback(async () => {
+        const id = renamingIdRef.current;
         const name = renameDraft.trim();
         setRenamingId(null);
         if (!id || !name) return;
@@ -320,186 +313,222 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
             setError(String(err));
             await refreshMacros();
         }
-    }
+    }, [renameDraft, refreshMacros]);
 
-    function cancelRename() {
+    const cancelRename = useCallback(() => {
         setRenamingId(null);
         setRenameDraft("");
-    }
+    }, []);
 
-    function handleDeleteClick(id: string) {
-        if (confirmDeleteId === id) {
-            // Second click within the window — actually delete.
-            if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
-            setConfirmDeleteId(null);
-            void handleDelete(id);
-            return;
-        }
-
-        // First click — arm confirmation, auto-reset after a few seconds
-        // so a stray later click elsewhere doesn't leave it primed forever.
-        setConfirmDeleteId(id);
-        if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
-        confirmResetTimer.current = setTimeout(() => setConfirmDeleteId(null), 3000);
-    }
-
-    async function handleDelete(id: string) {
+    const handleDelete = useCallback(async (id: string) => {
         try {
             await invoke("delete_macro", { id });
             await refreshMacros();
+            toast("Macro deleted.", "success");
         } catch (err) {
             setError(String(err));
         }
-    }
+    }, [refreshMacros, toast]);
 
-    function handleShareClick(id: string) {
-        if (!isSupabaseConfigured) {
-            setError(
-                "Community sharing isn't set up yet — add Supabase credentials to .env first."
-            );
-            return;
-        }
+    const handleDeleteClick = useCallback(
+        (id: string) => {
+            if (confirmDeleteIdRef.current === id) {
+                // Second click within the window — actually delete.
+                if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+                setConfirmDeleteId(null);
+                void handleDelete(id);
+                return;
+            }
 
-        if (!user) {
-            // Jump straight to Community's sign-in panel instead of showing a
-            // passive error the person has to interpret and act on themselves.
-            setActiveTab("community");
-            return;
-        }
+            // First click — arm confirmation, auto-reset after a few seconds
+            // so a stray later click elsewhere doesn't leave it primed forever.
+            setConfirmDeleteId(id);
+            if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+            confirmResetTimer.current = setTimeout(() => setConfirmDeleteId(null), 3000);
+        },
+        [handleDelete]
+    );
 
-        if (confirmShareId === id) {
+    const handleShare = useCallback(
+        async (id: string) => {
+            if (!supabase) return;
+            if (!user) {
+                setError("Sign in from the Community Library tab first to share macros.");
+                return;
+            }
+            setError(null);
+            setSharingId(id);
+            try {
+                const json = await invoke<string>("export_macro_json", { id });
+                const fragment = JSON.parse(json) as {
+                    fragment_type: string;
+                    name: string;
+                    tags: string[];
+                    format_version: number;
+                    payload: unknown;
+                };
+
+                const { error: insertError } = await supabase.from("fragments").insert({
+                    fragment_type: fragment.fragment_type,
+                    name: fragment.name,
+                    tags: fragment.tags,
+                    format_version: fragment.format_version,
+                    payload: fragment.payload,
+                    submitted_by: user.id,
+                });
+
+                if (insertError) throw insertError;
+                setSharedIds((prev) => new Set(prev).add(id));
+                toast("Macro shared to the community library.", "success");
+            } catch (err) {
+                setError(extractErrorMessage(err));
+            } finally {
+                setSharingId(null);
+            }
+        },
+        [user, toast]
+    );
+
+    const handleShareClick = useCallback(
+        (id: string) => {
+            if (!isSupabaseConfigured) {
+                setError(
+                    "Community sharing isn't set up yet — add Supabase credentials to .env first."
+                );
+                return;
+            }
+
+            if (!user) {
+                // Jump straight to Community's sign-in panel instead of showing a
+                // passive error the person has to interpret and act on themselves.
+                setActiveTab("community");
+                return;
+            }
+
+            if (confirmShareIdRef.current === id) {
+                if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
+                setConfirmShareId(null);
+                void handleShare(id);
+                return;
+            }
+
+            setConfirmShareId(id);
             if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
-            setConfirmShareId(null);
-            void handleShare(id);
-            return;
-        }
+            shareConfirmResetTimer.current = setTimeout(() => setConfirmShareId(null), 4000);
+        },
+        [user, setActiveTab, handleShare]
+    );
 
-        setConfirmShareId(id);
-        if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
-        shareConfirmResetTimer.current = setTimeout(() => setConfirmShareId(null), 4000);
-    }
+    const handleExport = useCallback(
+        async (m: MacroSummary) => {
+            try {
+                const json = await invoke<string>("export_macro_json", { id: m.id });
+                const blob = new Blob([json], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${m.name.replace(/[^a-z0-9-_ ]/gi, "_")}.fragdesk-macro.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast(`Exported "${m.name}".`, "success");
+            } catch (err) {
+                setError(String(err));
+            }
+        },
+        [toast]
+    );
 
-    async function handleShare(id: string) {
-        if (!supabase) return;
-        if (!user) {
-            setError("Sign in from the Community Library tab first to share macros.");
-            return;
-        }
-        setError(null);
-        setSharingId(id);
-        try {
-            const json = await invoke<string>("export_macro_json", { id });
-            const fragment = JSON.parse(json) as {
-                fragment_type: string;
-                name: string;
-                tags: string[];
-                format_version: number;
-                payload: unknown;
-            };
-
-            const { error: insertError } = await supabase.from("fragments").insert({
-                fragment_type: fragment.fragment_type,
-                name: fragment.name,
-                tags: fragment.tags,
-                format_version: fragment.format_version,
-                payload: fragment.payload,
-                submitted_by: user.id,
-            });
-
-            if (insertError) throw insertError;
-            setSharedIds((prev) => new Set(prev).add(id));
-        } catch (err) {
-            setError(extractErrorMessage(err));
-        } finally {
-            setSharingId(null);
-        }
-    }
-
-    async function handleExport(m: MacroSummary) {
-        try {
-            const json = await invoke<string>("export_macro_json", { id: m.id });
-            const blob = new Blob([json], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `${m.name.replace(/[^a-z0-9-_ ]/gi, "_")}.fragdesk-macro.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        } catch (err) {
-            setError(String(err));
-        }
-    }
-
-    function handleImportClick() {
+    const handleImportClick = useCallback(() => {
         importFileInputRef.current?.click();
-    }
+    }, []);
 
-    async function handleImportFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-        const file = e.target.files?.[0];
-        e.target.value = ""; // allow re-selecting the same file later
-        if (!file) return;
+    const handleImportFileChange = useCallback(
+        async (e: React.ChangeEvent<HTMLInputElement>) => {
+            const file = e.target.files?.[0];
+            e.target.value = ""; // allow re-selecting the same file later
+            if (!file) return;
 
-        try {
-            const text = await file.text();
-            await invoke("import_macro_json", { json: text, source: null });
-            await refreshMacros();
-        } catch (err) {
-            setError(String(err));
-        }
-    }
+            try {
+                const text = await file.text();
+                await invoke("import_macro_json", { json: text, source: null });
+                await refreshMacros();
+                toast(`Imported "${file.name}".`, "success");
+            } catch (err) {
+                setError(String(err));
+            }
+        },
+        [refreshMacros, toast]
+    );
 
-    async function handleSetHotkey(id: string, hotkey: string) {
-        try {
-            await invoke("set_macro_hotkey", { id, hotkey });
-            setCapturingHotkeyId(null);
-            await refreshMacros();
-        } catch (err) {
-            setCapturingHotkeyId(null);
-            setError(String(err));
-        }
-    }
+    const handleSetHotkey = useCallback(
+        async (id: string, hotkey: string) => {
+            try {
+                await invoke("set_macro_hotkey", { id, hotkey });
+                setCapturingHotkeyId(null);
+                await refreshMacros();
+            } catch (err) {
+                setCapturingHotkeyId(null);
+                setError(String(err));
+            }
+        },
+        [refreshMacros]
+    );
 
-    async function handleClearHotkey(id: string) {
-        try {
-            await invoke("set_macro_hotkey", { id, hotkey: null });
-            await refreshMacros();
-        } catch (err) {
-            setError(String(err));
-        }
-    }
+    const handleClearHotkey = useCallback(
+        async (id: string) => {
+            try {
+                await invoke("set_macro_hotkey", { id, hotkey: null });
+                await refreshMacros();
+            } catch (err) {
+                setError(String(err));
+            }
+        },
+        [refreshMacros]
+    );
 
-    async function handleAddTag(m: MacroSummary) {
-        const tag = tagDraft.trim();
-        setTagDraft("");
-        setAddingTagToId(null);
-        if (!tag || m.tags.includes(tag)) return;
+    const handleAddTag = useCallback(
+        async (m: MacroSummary) => {
+            const tag = tagDraft.trim();
+            setTagDraft("");
+            setAddingTagToId(null);
+            if (!tag || m.tags.includes(tag)) return;
 
-        const newTags = [...m.tags, tag];
-        setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
-        try {
-            await invoke("set_macro_tags", { id: m.id, tags: newTags });
-        } catch (err) {
-            setError(String(err));
-            await refreshMacros();
-        }
-    }
+            const newTags = [...m.tags, tag];
+            setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
+            try {
+                await invoke("set_macro_tags", { id: m.id, tags: newTags });
+            } catch (err) {
+                setError(String(err));
+                await refreshMacros();
+            }
+        },
+        [tagDraft, refreshMacros]
+    );
 
-    async function handleRemoveTag(m: MacroSummary, tag: string) {
-        const newTags = m.tags.filter((t) => t !== tag);
-        setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
-        try {
-            await invoke("set_macro_tags", { id: m.id, tags: newTags });
-        } catch (err) {
-            setError(String(err));
-            await refreshMacros();
-        }
-    }
+    const handleRemoveTag = useCallback(
+        async (m: MacroSummary, tag: string) => {
+            const newTags = m.tags.filter((t) => t !== tag);
+            setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
+            try {
+                await invoke("set_macro_tags", { id: m.id, tags: newTags });
+            } catch (err) {
+                setError(String(err));
+                await refreshMacros();
+            }
+        },
+        [refreshMacros]
+    );
 
-    function toggleTagFilter(tag: string) {
+    const toggleTagFilter = useCallback((tag: string) => {
         setActiveTagFilters((prev) =>
             prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
         );
-    }
+    }, []);
+
+    const closeTagInput = useCallback(() => {
+        setAddingTagToId(null);
+        setTagDraft("");
+    }, []);
 
     const allTags = Array.from(new Set(macros.flatMap((m) => m.tags))).sort();
     const visibleMacros =
@@ -509,12 +538,26 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
 
     return (
         <div className="min-h-full bg-frag-bg text-frag-text p-4 md:p-6 space-y-6">
-            <div>
-                <h1 className="text-2xl font-bold text-frag-primary">Macro Manager</h1>
-                <p className="text-sm text-frag-muted mt-1">
-                    Record keyboard and mouse input, then replay it anytime.
-                </p>
-            </div>
+            <PageHeader
+                title="Macro Manager"
+                subtitle="Record keyboard and mouse input, then replay it anytime."
+                accent={<Zap size={22} />}
+                actions={
+                    <>
+                        <input
+                            ref={importFileInputRef}
+                            type="file"
+                            accept=".json"
+                            onChange={handleImportFileChange}
+                            className="hidden"
+                        />
+                        <Button variant="secondary" onClick={handleImportClick}>
+                            <Upload size={16} />
+                            Import macro
+                        </Button>
+                    </>
+                }
+            />
 
             {hasPermission === false && (
                 <div className="bg-frag-danger/10 border border-frag-danger/40 text-sm rounded-lg px-4 py-3 space-y-1">
@@ -530,11 +573,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                 </div>
             )}
 
-            {error && (
-                <div className="break-words bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-2">
-                    {error}
-                </div>
-            )}
+            {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
             {/* Recording control */}
             <div className="bg-frag-surface rounded-xl p-4 md:p-5 border border-frag-border">
@@ -577,7 +616,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                             onClick={isRecording ? handleStopRecording : handleStartRecording}
                             className={`px-5 py-2.5 rounded-lg font-medium transition-colors ${
                                 isRecording
-                                    ? "bg-frag-danger hover:bg-frag-danger/80 text-white"
+                                    ? "bg-frag-danger hover:bg-frag-danger/80 text-frag-bg"
                                     : "bg-frag-primary hover:bg-frag-primary/80 text-frag-bg"
                             }`}
                         >
@@ -611,7 +650,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                             </button>
                             <button
                                 onClick={handleDiscardRecording}
-                                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-frag-text font-medium text-sm"
+                                className="px-4 py-2 rounded-lg bg-frag-border/40 hover:bg-frag-border/70 text-frag-text font-medium text-sm"
                             >
                                 Discard
                             </button>
@@ -652,24 +691,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
 
             {/* Macro list */}
             <div className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-y-2">
-                    <h2 className="text-sm font-medium text-frag-muted">Your macros</h2>
-                    <div>
-                        <input
-                            ref={importFileInputRef}
-                            type="file"
-                            accept=".json"
-                            onChange={handleImportFileChange}
-                            className="hidden"
-                        />
-                        <button
-                            onClick={handleImportClick}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-frag-text font-medium"
-                        >
-                            Import macro
-                        </button>
-                    </div>
-                </div>
+                <h2 className="text-sm font-medium text-frag-muted">Your macros</h2>
                 {allTags.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5 pb-1">
                         {allTags.map((tag) => {
@@ -678,10 +700,11 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                                 <button
                                     key={tag}
                                     onClick={() => toggleTagFilter(tag)}
-                                        className={`max-w-xs truncate text-xs px-2 py-1 rounded-full border transition-colors ${
+                                    aria-pressed={active}
+                                    className={`max-w-xs truncate text-xs px-2 py-1 rounded-full border transition-colors ${
                                         active
                                             ? "bg-frag-primary/15 border-frag-primary/50 text-frag-primary"
-                                            : "bg-white/5 border-frag-border text-frag-muted hover:text-frag-text"
+                                            : "bg-frag-border/40 border-frag-border text-frag-muted hover:text-frag-text"
                                     }`}
                                 >
                                     {tag}
@@ -698,212 +721,57 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: str
                         )}
                     </div>
                 )}
-                {macros.length === 0 ? (
-                    <p className="text-frag-muted text-sm">No macros yet — record one above.</p>
-                ) : visibleMacros.length === 0 ? (
-                    <p className="text-frag-muted text-sm">No macros match the selected tags.</p>
-                ) : (
-                    visibleMacros.map((m) => {
-                        const isThisPlaying = playingId === m.id;
-                        const isRenamingThis = renamingId === m.id;
-                        const isConfirmingDelete = confirmDeleteId === m.id;
 
-                        return (
-                            <div
+                {isLoading ? (
+                    <LoadingState rows={3} label="Loading macros" />
+                ) : macros.length === 0 ? (
+                    <EmptyState
+                        icon={Zap}
+                        title="No macros yet"
+                        description="Record one above, or import a saved macro file."
+                    />
+                ) : visibleMacros.length === 0 ? (
+                    <EmptyState
+                        title="No macros match the selected tags"
+                        description="Try clearing the tag filters above."
+                    />
+                ) : (
+                    <div className="space-y-2">
+                        {visibleMacros.map((m) => (
+                            <MacroCard
                                 key={m.id}
-                                className="bg-frag-surface rounded-xl p-4 border border-frag-border flex items-center justify-between"
-                            >
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        {isRenamingThis ? (
-                                            <input
-                                                ref={renameInputRef}
-                                                type="text"
-                                                value={renameDraft}
-                                                onChange={(e) => setRenameDraft(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter") commitRename();
-                                                    if (e.key === "Escape") cancelRename();
-                                                }}
-                                                onBlur={commitRename}
-                                                className="min-w-0 w-full max-w-xs bg-frag-bg border border-frag-primary rounded px-2 py-1 text-sm focus:outline-none"
-                                            />
-                                        ) : (
-                                            <button
-                                                onClick={() => startRename(m)}
-                                                title="Click to rename"
-                                                className="min-w-0 truncate font-medium text-left hover:text-frag-primary transition-colors"
-                                            >
-                                                {m.name}
-                                            </button>
-                                        )}
-                                        {m.source === "community" && (
-                                            <span
-                                                title="Imported from the Community Library — reviewed this before importing? Playing it simulates real input on your machine."
-                                                className="shrink-0 text-xs bg-frag-danger/10 text-frag-danger border border-frag-danger/30 rounded px-1.5 py-0.5"
-                                            >
-                                                community
-                                            </span>
-                                        )}
-                                        {m.source === "starter" && (
-                                            <span
-                                                title="Imported from FragDesk's bundled starter pack"
-                                                className="shrink-0 text-xs bg-white/5 text-frag-muted rounded px-1.5 py-0.5"
-                                            >
-                                                starter
-                                            </span>
-                                        )}
-                                    </div>
-                                    <p className="text-xs text-frag-muted mt-0.5">
-                                        {m.event_count} events · {formatDuration(m.duration_ms)} ·{" "}
-                                        {formatDate(m.created_at)}
-                                    </p>
-                                    <div className="mt-1.5">
-                                        {capturingHotkeyId === m.id ? (
-                                            <span className="text-xs text-frag-accent animate-pulse">
-                                                Press a key combo... (Esc to cancel)
-                                            </span>
-                                        ) : m.hotkey ? (
-                                            <span className="inline-flex items-center gap-1.5">
-                                                    <span className="break-words text-xs font-mono bg-frag-accent/15 text-frag-accent border border-frag-accent/30 rounded px-1.5 py-0.5">
-                                                    {m.hotkey.replace("CommandOrControl", "Ctrl")}
-                                                </span>
-                                                <button
-                                                    onClick={() => handleClearHotkey(m.id)}
-                                                    className="text-xs text-frag-muted hover:text-frag-danger"
-                                                >
-                                                    clear
-                                                </button>
-                                            </span>
-                                        ) : (
-                                            <button
-                                                onClick={() => setCapturingHotkeyId(m.id)}
-                                                className="text-xs text-frag-muted hover:text-frag-primary"
-                                            >
-                                                + set hotkey
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                                        {m.tags.map((tag) => (
-                                            <span
-                                                key={tag}
-                                                className="inline-flex items-center gap-1 text-xs bg-white/5 text-frag-text rounded-full px-2 py-0.5"
-                                            >
-                                                <span className="max-w-xs truncate">{tag}</span>
-                                                <button
-                                                    onClick={() => handleRemoveTag(m, tag)}
-                                                    className="text-frag-muted hover:text-frag-danger"
-                                                >
-                                                    ×
-                                                </button>
-                                            </span>
-                                        ))}
-                                        {addingTagToId === m.id ? (
-                                            <input
-                                                autoFocus
-                                                type="text"
-                                                value={tagDraft}
-                                                onChange={(e) => setTagDraft(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter") handleAddTag(m);
-                                                    if (e.key === "Escape") {
-                                                        setAddingTagToId(null);
-                                                        setTagDraft("");
-                                                    }
-                                                }}
-                                                onBlur={() => handleAddTag(m)}
-                                                placeholder="tag name"
-                                                className="text-xs bg-frag-bg border border-frag-border rounded-full px-2 py-0.5 w-24 focus:outline-none focus:border-frag-primary"
-                                            />
-                                        ) : (
-                                            <button
-                                                onClick={() => setAddingTagToId(m.id)}
-                                                className="text-xs text-frag-muted hover:text-frag-primary"
-                                            >
-                                                + tag
-                                            </button>
-                                        )}
-                                    </div>
-                                    {isThisPlaying && progress && (
-                                        <div className="mt-2 w-full max-w-64">
-                                            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full bg-frag-accent transition-all"
-                                                    style={{
-                                                        width: `${(progress.current_index / progress.total) * 100}%`,
-                                                    }}
-                                                />
-                                            </div>
-                                            {progress.repeat_total > 1 && (
-                                                <p className="text-xs text-frag-muted mt-1">
-                                                    Repeat {progress.repeat_index + 1} of {progress.repeat_total}
-                                                </p>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2 shrink-0 ml-4">
-                                    {isThisPlaying ? (
-                                        <button
-                                            onClick={handleStopPlayback}
-                                            className="px-3 py-1.5 rounded-lg bg-frag-danger hover:bg-frag-danger/80 text-white text-sm font-medium"
-                                        >
-                                            Stop
-                                        </button>
-                                    ) : (
-                                        <button
-                                            onClick={() => handlePlay(m.id)}
-                                            disabled={playingId !== null}
-                                            className="px-3 py-1.5 rounded-lg bg-frag-primary hover:bg-frag-primary/80 text-frag-bg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                                        >
-                                            Play
-                                        </button>
-                                    )}
-                                    <button
-                                        onClick={() => handleExport(m)}
-                                        disabled={isThisPlaying}
-                                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-frag-text text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                                    >
-                                        Export
-                                    </button>
-                                    {sharedIds.has(m.id) ? (
-                                        <span className="px-3 py-1.5 rounded-lg bg-frag-success/15 text-frag-success border border-frag-success/30 text-sm font-medium">
-                                            Shared ✓
-                                        </span>
-                                    ) : (
-                                        <button
-                                            onClick={() => handleShareClick(m.id)}
-                                            disabled={isThisPlaying || sharingId === m.id}
-                                            title="Publishes this macro to the public Community Library"
-                                            className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
-                                                confirmShareId === m.id
-                                                    ? "bg-frag-accent text-white"
-                                                    : "bg-white/5 hover:bg-white/10 text-frag-text"
-                                            }`}
-                                        >
-                                            {sharingId === m.id
-                                                ? "Sharing..."
-                                                : confirmShareId === m.id
-                                                ? "Confirm public share?"
-                                                : "Share"}
-                                        </button>
-                                    )}
-                                    <button
-                                        onClick={() => handleDeleteClick(m.id)}
-                                        disabled={isThisPlaying}
-                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
-                                            isConfirmingDelete
-                                                ? "bg-frag-danger text-white"
-                                                : "bg-white/5 hover:bg-white/10 text-frag-text"
-                                        }`}
-                                    >
-                                        {isConfirmingDelete ? "Confirm?" : "Delete"}
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })
+                                macro={m}
+                                isPlaying={playingId === m.id}
+                                progress={playingId === m.id ? progress : null}
+                                isRenaming={renamingId === m.id}
+                                renameDraft={renameDraft}
+                                isConfirmingDelete={confirmDeleteId === m.id}
+                                isCapturingHotkey={capturingHotkeyId === m.id}
+                                isConfirmingShare={confirmShareId === m.id}
+                                isSharing={sharingId === m.id}
+                                isShared={sharedIds.has(m.id)}
+                                isAddingTag={addingTagToId === m.id}
+                                tagDraft={tagDraft}
+                                hasActivePlayback={playingId !== null}
+                                onStartRename={startRename}
+                                onRenameChange={setRenameDraft}
+                                onCommitRename={commitRename}
+                                onCancelRename={cancelRename}
+                                onClearHotkey={handleClearHotkey}
+                                onCaptureHotkey={setCapturingHotkeyId}
+                                onAddTag={handleAddTag}
+                                onRemoveTag={handleRemoveTag}
+                                onTagDraftChange={setTagDraft}
+                                onOpenTagInput={setAddingTagToId}
+                                onCloseTagInput={closeTagInput}
+                                onPlay={handlePlay}
+                                onStopPlayback={handleStopPlayback}
+                                onExport={handleExport}
+                                onShareClick={handleShareClick}
+                                onDeleteClick={handleDeleteClick}
+                            />
+                        ))}
+                    </div>
                 )}
             </div>
         </div>
