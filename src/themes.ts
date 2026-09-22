@@ -1,4 +1,5 @@
 export const DEFAULT_PALETTE_ID = 'neon';
+export const PERSISTED_PALETTE_KEY = 'fragdesk:palette';
 
 const PALETTE_KEYS = [
   'bg',
@@ -116,6 +117,22 @@ export function applyPalette(palette: Palette): void {
   for (const key of PALETTE_KEYS) {
     root.setProperty(`--frag-${key}`, palette.colors[key]);
   }
+  try {
+    localStorage.setItem(PERSISTED_PALETTE_KEY, palette.id);
+  } catch {
+    // localStorage can be unavailable in some embedded webviews; the
+    // palette still applies for this session.
+  }
+}
+
+export function getCachedPaletteId(): string {
+  try {
+    const id = localStorage.getItem(PERSISTED_PALETTE_KEY);
+    if (id && PALETTES.some((p) => p.id === id)) return id;
+  } catch {
+    // fall through to the default
+  }
+  return DEFAULT_PALETTE_ID;
 }
 
 export function applyPaletteById(id: string): void {
