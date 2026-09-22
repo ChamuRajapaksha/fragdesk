@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Activity, ArrowRight, Clipboard, Command, Save, Zap, type LucideIcon } from 'lucide-react';
+import { Activity, ArrowRight, Clipboard, Command, Save, Sparkles, X, Zap, type LucideIcon } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { Area, AreaChart, ResponsiveContainer } from 'recharts';
 import { Badge, Button, StatCard, useToast } from '../ui';
@@ -100,6 +100,8 @@ const CARD_VARIANTS = {
   }),
 };
 
+const SPOTLIGHT_DISMISS_KEY = 'fragdesk:spotlight-dismissed';
+
 export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
   const { toast } = useToast();
   const [stats, setStats] = useState<DashboardStats>({
@@ -112,6 +114,32 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
     () => FEATURES_BY_GROUP.filter((section) => FEATURE_GROUPS.has(section.group)),
     [],
   );
+
+  const newFeatures = useMemo(
+    () => sections.flatMap((section) => section.features).filter((f) => featureMode(f.id) === 'new'),
+    [sections],
+  );
+
+  const [dismissed, setDismissed] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(SPOTLIGHT_DISMISS_KEY) ?? '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const spotlight = useMemo(
+    () => newFeatures.filter((f) => !dismissed.includes(f.id)),
+    [newFeatures, dismissed],
+  );
+
+  const dismissSpotlight = useCallback((id: string) => {
+    setDismissed((prev) => {
+      const next = [...prev, id];
+      localStorage.setItem(SPOTLIGHT_DISMISS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     // Each stat fetched independently so one broken/unconfigured feature
@@ -237,6 +265,64 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
           }
         />
       </div>
+
+      {/* New-feature spotlight */}
+      {spotlight.length > 0 && (
+        <div className="mb-8 space-y-3">
+          {spotlight.map((feature, index) => {
+            const Icon = feature.icon;
+            const accent =
+              ACCENTS[feature.id] ?? {
+                color: 'text-frag-primary',
+                bgColor: 'bg-frag-primary/10',
+              };
+            return (
+              <motion.div
+                key={feature.id}
+                custom={index}
+                variants={CARD_VARIANTS}
+                initial="hidden"
+                animate="show"
+                className="relative flex items-center gap-4 rounded-lg border border-frag-accent/30 bg-gradient-to-r from-frag-accent/10 via-frag-accent/5 to-transparent p-4 md:p-5"
+              >
+                <div className={`${accent.bgColor} p-3 rounded-lg shrink-0`}>
+                  <Icon className={accent.color} size={26} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-frag-accent flex items-center gap-1.5">
+                    <Sparkles size={13} />
+                    New feature
+                  </p>
+                  <h3 className="text-lg font-semibold text-frag-text mt-0.5">
+                    {feature.label}
+                  </h3>
+                  <p className="text-frag-muted text-sm mt-0.5 line-clamp-2">
+                    {feature.description}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    variant="secondary"
+                    className="whitespace-nowrap"
+                    onClick={() => setActiveTab(feature.id)}
+                  >
+                    Explore
+                    <ArrowRight size={16} />
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => dismissSpotlight(feature.id)}
+                    aria-label={`Dismiss ${feature.label} announcement`}
+                    className="p-2 rounded-lg text-frag-muted hover:text-frag-text hover:bg-frag-bg transition-colors"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Grouped feature grid */}
       <div className="space-y-8">
