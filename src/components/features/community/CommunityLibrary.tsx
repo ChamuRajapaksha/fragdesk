@@ -9,10 +9,15 @@ import FilterBar from "./FilterBar";
 import { type CommunityFragmentRow } from "./communityTypes";
 import { EmptyState, ErrorBanner, LoadingState, PageHeader } from "../../ui";
 
+const PAGE_SIZE = 25;
+
 export default function CommunityLibrary() {
     const { user, loading: authLoading, signOut } = useAuth();
     const [fragments, setFragments] = useState<CommunityFragmentRow[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [hasMore, setHasMore] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
     const [importingId, setImportingId] = useState<string | null>(null);
@@ -61,14 +66,42 @@ export default function CommunityLibrary() {
             const { data, error: queryError } = await supabase
                 .from("fragments")
                 .select("*")
-                .order("created_at", { ascending: false });
+                .order("created_at", { ascending: false })
+                .range(0, PAGE_SIZE - 1);
 
             if (queryError) throw queryError;
             setFragments((data as CommunityFragmentRow[]) ?? []);
+            setHasMore((data?.length ?? 0) === PAGE_SIZE);
         } catch (err) {
             setError(extractErrorMessage(err));
         } finally {
             setLoading(false);
+        }
+    }
+
+    async function loadMore() {
+        if (!supabase || loadingMore) return;
+        setLoadingMore(true);
+        try {
+            const { data, error: queryError } = await supabase
+                .from("fragments")
+                .select("*")
+                .order("created_at", { ascending: false })
+                .range(fragments.length, fragments.length + PAGE_SIZE - 1);
+
+            if (queryError) throw queryError;
+            setFragments((prev) => {
+                const existing = new Set(prev.map((f) => f.id));
+                const fresh = (data as CommunityFragmentRow[])
+                    .filter((f) => !existing.has(f.id))
+                    .map((f) => f);
+                return [...prev, ...fresh];
+            });
+            setHasMore((data?.length ?? 0) === PAGE_SIZE);
+        } catch (err) {
+            setError(extractErrorMessage(err));
+        } finally {
+            setLoadingMore(false);
         }
     }
 
@@ -222,10 +255,18 @@ export default function CommunityLibrary() {
     }
 
     const allTags = Array.from(new Set(fragments.flatMap((f) => f.tags))).sort();
+    const query = searchQuery.trim().toLowerCase();
     const visibleFragments = fragments
         .filter((f) => (showOnlyMine ? user !== null && f.submitted_by === user.id : true))
         .filter((f) =>
             activeTagFilters.length === 0 ? true : f.tags.some((t) => activeTagFilters.includes(t))
+        )
+        .filter((f) =>
+            query.length === 0
+                ? true
+                : f.name.toLowerCase().includes(query) ||
+                  f.tags.some((t) => t.toLowerCase().includes(query)) ||
+                  f.fragment_type.toLowerCase().includes(query)
         );
 
     if (!isSupabaseConfigured) {
@@ -293,6 +334,8 @@ export default function CommunityLibrary() {
                 onToggleTag={toggleTagFilter}
                 onClearFilters={() => setActiveTagFilters([])}
                 loading={loading}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
             />
 
             {loading ? (
@@ -305,11 +348,16 @@ export default function CommunityLibrary() {
                 />
             ) : visibleFragments.length === 0 ? (
                 <EmptyState
-                    title={showOnlyMine ? "You haven't shared anything yet" : "No fragments match the selected tags"}
-                    description={showOnlyMine ? "" : "Try clearing the tag filters above."}
+                    title={
+                        showOnlyMine
+                            ? "You haven't shared anything yet"
+                            : "No fragments match your search or filters"
+                    }
+                    description={showOnlyMine ? "" : "Try clearing the tag filters or search above."}
                 />
             ) : (
-                <div className="space-y-2">
+                <>
+                    <div className="space-y-2">
                     {visibleFragments.map((row) => {
                         const isImported = importedIds.has(row.id);
                         const isImporting = importingId === row.id;
@@ -360,7 +408,17 @@ export default function CommunityLibrary() {
                             />
                         );
                     })}
-                </div>
+                    </div>
+                    {hasMore && (
+                        <button
+                            onClick={loadMore}
+                            disabled={loadingMore}
+                            className="w-full mt-2 py-2 rounded-lg bg-frag-surface border border-frag-border text-sm text-frag-muted hover:text-frag-text disabled:opacity-40 transition-colors"
+                        >
+                            {loadingMore ? "Loading..." : "Load more"}
+                        </button>
+                    )}
+                </>
             )}
         </div>
     );
