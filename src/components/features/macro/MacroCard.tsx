@@ -19,22 +19,22 @@ export interface MacroCardProps {
     isAddingTag: boolean;
     tagDraft: string;
     hasActivePlayback: boolean;
-    onStartRename: () => void;
+    onStartRename: (macro: MacroSummary) => void;
     onRenameChange: (value: string) => void;
     onCommitRename: () => void;
     onCancelRename: () => void;
-    onClearHotkey: () => void;
-    onCaptureHotkey: () => void;
-    onAddTag: () => void;
-    onRemoveTag: (tag: string) => void;
+    onClearHotkey: (id: string) => void;
+    onCaptureHotkey: (id: string) => void;
+    onAddTag: (macro: MacroSummary) => void;
+    onRemoveTag: (macro: MacroSummary, tag: string) => void;
     onTagDraftChange: (value: string) => void;
-    onOpenTagInput: () => void;
+    onOpenTagInput: (id: string) => void;
     onCloseTagInput: () => void;
-    onPlay: () => void;
+    onPlay: (id: string) => void;
     onStopPlayback: () => void;
-    onExport: () => void;
-    onShareClick: () => void;
-    onDeleteClick: () => void;
+    onExport: (macro: MacroSummary) => void;
+    onShareClick: (id: string) => void;
+    onDeleteClick: (id: string) => void;
 }
 
 function MacroCard({
@@ -95,7 +95,7 @@ function MacroCard({
                         />
                     ) : (
                         <button
-                            onClick={onStartRename}
+                            onClick={() => onStartRename(m)}
                             title="Click to rename"
                             className="min-w-0 truncate font-medium text-left hover:text-frag-primary transition-colors"
                         >
@@ -134,7 +134,7 @@ function MacroCard({
                                 {formatHotkey(m.hotkey)}
                             </span>
                             <button
-                                onClick={onClearHotkey}
+                                onClick={() => onClearHotkey(m.id)}
                                 className="text-xs text-frag-muted hover:text-frag-danger"
                             >
                                 clear
@@ -142,7 +142,7 @@ function MacroCard({
                         </span>
                     ) : (
                         <button
-                            onClick={onCaptureHotkey}
+                            onClick={() => onCaptureHotkey(m.id)}
                             className="text-xs text-frag-muted hover:text-frag-primary"
                         >
                             + set hotkey
@@ -157,7 +157,7 @@ function MacroCard({
                         >
                             <span className="max-w-xs truncate">{tag}</span>
                             <button
-                                onClick={() => onRemoveTag(tag)}
+                                onClick={() => onRemoveTag(m, tag)}
                                 aria-label={`Remove tag ${tag}`}
                                 className="text-frag-muted hover:text-frag-danger"
                             >
@@ -172,16 +172,16 @@ function MacroCard({
                             value={tagDraft}
                             onChange={(e) => onTagDraftChange(e.target.value)}
                             onKeyDown={(e) => {
-                                if (e.key === "Enter") onAddTag();
+                                if (e.key === "Enter") onAddTag(m);
                                 if (e.key === "Escape") onCloseTagInput();
                             }}
-                            onBlur={onAddTag}
+                            onBlur={() => onAddTag(m)}
                             placeholder="tag name"
                             className="text-xs bg-frag-bg border border-frag-border rounded-full px-2 py-0.5 w-24 focus:outline-none focus:border-frag-primary"
                         />
                     ) : (
                         <button
-                            onClick={onOpenTagInput}
+                            onClick={() => onOpenTagInput(m.id)}
                             className="text-xs text-frag-muted hover:text-frag-primary"
                         >
                             + tag
@@ -216,7 +216,7 @@ function MacroCard({
                     </button>
                 ) : (
                     <button
-                        onClick={onPlay}
+                        onClick={() => onPlay(m.id)}
                         disabled={hasActivePlayback}
                         className="px-3 py-1.5 rounded-lg bg-frag-primary hover:bg-frag-primary/80 text-frag-bg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                     >
@@ -224,7 +224,7 @@ function MacroCard({
                     </button>
                 )}
                 <button
-                    onClick={onExport}
+                    onClick={() => onExport(m)}
                     disabled={isPlaying}
                     className="px-3 py-1.5 rounded-lg bg-frag-border/40 hover:bg-frag-border/70 text-frag-text text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -236,7 +236,7 @@ function MacroCard({
                     </span>
                 ) : (
                     <button
-                        onClick={onShareClick}
+                        onClick={() => onShareClick(m.id)}
                         disabled={isPlaying || isSharing}
                         title="Publishes this macro to the public Community Library"
                         className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
@@ -253,7 +253,7 @@ function MacroCard({
                     </button>
                 )}
                 <button
-                    onClick={onDeleteClick}
+                    onClick={() => onDeleteClick(m.id)}
                     disabled={isPlaying}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
                         isConfirmingDelete

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Upload, Zap } from "lucide-react";
@@ -72,6 +72,24 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
     const nameInputRef = useRef<HTMLInputElement>(null);
     const confirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const importFileInputRef = useRef<HTMLInputElement>(null);
+
+    // Ref mirrors so confirm/rename handlers keep stable identities while
+    // still observing the latest armed-confirmation / rename-in-progress value.
+    const confirmDeleteIdRef = useRef<string | null>(null);
+    const confirmShareIdRef = useRef<string | null>(null);
+    const renamingIdRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        confirmDeleteIdRef.current = confirmDeleteId;
+    }, [confirmDeleteId]);
+
+    useEffect(() => {
+        confirmShareIdRef.current = confirmShareId;
+    }, [confirmShareId]);
+
+    useEffect(() => {
+        renamingIdRef.current = renamingId;
+    }, [renamingId]);
 
     const { user } = useAuth();
 
@@ -196,7 +214,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isCapturingRecordHotkey]);
 
-    async function refreshMacros() {
+    const refreshMacros = useCallback(async () => {
         try {
             const result = await invoke<MacroSummary[]>("get_macros");
             setMacros(result);
@@ -205,9 +223,9 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
         } finally {
             setIsLoading(false);
         }
-    }
+    }, []);
 
-    async function handleStartRecording() {
+    const handleStartRecording = useCallback(async () => {
         setError(null);
         try {
             await invoke("start_macro_recording");
@@ -216,9 +234,9 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
         } catch (err) {
             setError(String(err));
         }
-    }
+    }, []);
 
-    async function handleStopRecording() {
+    const handleStopRecording = useCallback(async () => {
         try {
             const preview = await invoke<RecordingPreview>("stop_macro_recording");
             setIsRecording(false);
@@ -231,9 +249,9 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
         } catch (err) {
             setError(String(err));
         }
-    }
+    }, []);
 
-    async function handleSaveMacro() {
+    const handleSaveMacro = useCallback(async () => {
         const name = macroName.trim();
         if (!name) return;
         try {
@@ -245,18 +263,18 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
         } catch (err) {
             setError(String(err));
         }
-    }
+    }, [macroName, refreshMacros, toast]);
 
-    async function handleDiscardRecording() {
+    const handleDiscardRecording = useCallback(async () => {
         try {
             await invoke("discard_macro_recording");
         } finally {
             setPendingPreview(null);
             setMacroName("");
         }
-    }
+    }, []);
 
-    async function handlePlay(id: string) {
+    const handlePlay = useCallback(async (id: string) => {
         setError(null);
         try {
             setPlayingId(id);
@@ -265,23 +283,23 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             setPlayingId(null);
             setError(String(err));
         }
-    }
+    }, [speed, repeat]);
 
-    async function handleStopPlayback() {
+    const handleStopPlayback = useCallback(async () => {
         try {
             await invoke("stop_macro_playback");
         } catch (err) {
             setError(String(err));
         }
-    }
+    }, []);
 
-    function startRename(m: MacroSummary) {
+    const startRename = useCallback((m: MacroSummary) => {
         setRenamingId(m.id);
         setRenameDraft(m.name);
-    }
+    }, []);
 
-    async function commitRename() {
-        const id = renamingId;
+    const commitRename = useCallback(async () => {
+        const id = renamingIdRef.current;
         const name = renameDraft.trim();
         setRenamingId(null);
         if (!id || !name) return;
@@ -295,30 +313,14 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
             setError(String(err));
             await refreshMacros();
         }
-    }
+    }, [renameDraft, refreshMacros]);
 
-    function cancelRename() {
+    const cancelRename = useCallback(() => {
         setRenamingId(null);
         setRenameDraft("");
-    }
+    }, []);
 
-    function handleDeleteClick(id: string) {
-        if (confirmDeleteId === id) {
-            // Second click within the window — actually delete.
-            if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
-            setConfirmDeleteId(null);
-            void handleDelete(id);
-            return;
-        }
-
-        // First click — arm confirmation, auto-reset after a few seconds
-        // so a stray later click elsewhere doesn't leave it primed forever.
-        setConfirmDeleteId(id);
-        if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
-        confirmResetTimer.current = setTimeout(() => setConfirmDeleteId(null), 3000);
-    }
-
-    async function handleDelete(id: string) {
+    const handleDelete = useCallback(async (id: string) => {
         try {
             await invoke("delete_macro", { id });
             await refreshMacros();
@@ -326,159 +328,207 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
         } catch (err) {
             setError(String(err));
         }
-    }
+    }, [refreshMacros, toast]);
 
-    function handleShareClick(id: string) {
-        if (!isSupabaseConfigured) {
-            setError(
-                "Community sharing isn't set up yet — add Supabase credentials to .env first."
-            );
-            return;
-        }
+    const handleDeleteClick = useCallback(
+        (id: string) => {
+            if (confirmDeleteIdRef.current === id) {
+                // Second click within the window — actually delete.
+                if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+                setConfirmDeleteId(null);
+                void handleDelete(id);
+                return;
+            }
 
-        if (!user) {
-            // Jump straight to Community's sign-in panel instead of showing a
-            // passive error the person has to interpret and act on themselves.
-            setActiveTab("community");
-            return;
-        }
+            // First click — arm confirmation, auto-reset after a few seconds
+            // so a stray later click elsewhere doesn't leave it primed forever.
+            setConfirmDeleteId(id);
+            if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+            confirmResetTimer.current = setTimeout(() => setConfirmDeleteId(null), 3000);
+        },
+        [handleDelete]
+    );
 
-        if (confirmShareId === id) {
+    const handleShare = useCallback(
+        async (id: string) => {
+            if (!supabase) return;
+            if (!user) {
+                setError("Sign in from the Community Library tab first to share macros.");
+                return;
+            }
+            setError(null);
+            setSharingId(id);
+            try {
+                const json = await invoke<string>("export_macro_json", { id });
+                const fragment = JSON.parse(json) as {
+                    fragment_type: string;
+                    name: string;
+                    tags: string[];
+                    format_version: number;
+                    payload: unknown;
+                };
+
+                const { error: insertError } = await supabase.from("fragments").insert({
+                    fragment_type: fragment.fragment_type,
+                    name: fragment.name,
+                    tags: fragment.tags,
+                    format_version: fragment.format_version,
+                    payload: fragment.payload,
+                    submitted_by: user.id,
+                });
+
+                if (insertError) throw insertError;
+                setSharedIds((prev) => new Set(prev).add(id));
+                toast("Macro shared to the community library.", "success");
+            } catch (err) {
+                setError(extractErrorMessage(err));
+            } finally {
+                setSharingId(null);
+            }
+        },
+        [user, toast]
+    );
+
+    const handleShareClick = useCallback(
+        (id: string) => {
+            if (!isSupabaseConfigured) {
+                setError(
+                    "Community sharing isn't set up yet — add Supabase credentials to .env first."
+                );
+                return;
+            }
+
+            if (!user) {
+                // Jump straight to Community's sign-in panel instead of showing a
+                // passive error the person has to interpret and act on themselves.
+                setActiveTab("community");
+                return;
+            }
+
+            if (confirmShareIdRef.current === id) {
+                if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
+                setConfirmShareId(null);
+                void handleShare(id);
+                return;
+            }
+
+            setConfirmShareId(id);
             if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
-            setConfirmShareId(null);
-            void handleShare(id);
-            return;
-        }
+            shareConfirmResetTimer.current = setTimeout(() => setConfirmShareId(null), 4000);
+        },
+        [user, setActiveTab, handleShare]
+    );
 
-        setConfirmShareId(id);
-        if (shareConfirmResetTimer.current) clearTimeout(shareConfirmResetTimer.current);
-        shareConfirmResetTimer.current = setTimeout(() => setConfirmShareId(null), 4000);
-    }
+    const handleExport = useCallback(
+        async (m: MacroSummary) => {
+            try {
+                const json = await invoke<string>("export_macro_json", { id: m.id });
+                const blob = new Blob([json], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${m.name.replace(/[^a-z0-9-_ ]/gi, "_")}.fragdesk-macro.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast(`Exported "${m.name}".`, "success");
+            } catch (err) {
+                setError(String(err));
+            }
+        },
+        [toast]
+    );
 
-    async function handleShare(id: string) {
-        if (!supabase) return;
-        if (!user) {
-            setError("Sign in from the Community Library tab first to share macros.");
-            return;
-        }
-        setError(null);
-        setSharingId(id);
-        try {
-            const json = await invoke<string>("export_macro_json", { id });
-            const fragment = JSON.parse(json) as {
-                fragment_type: string;
-                name: string;
-                tags: string[];
-                format_version: number;
-                payload: unknown;
-            };
-
-            const { error: insertError } = await supabase.from("fragments").insert({
-                fragment_type: fragment.fragment_type,
-                name: fragment.name,
-                tags: fragment.tags,
-                format_version: fragment.format_version,
-                payload: fragment.payload,
-                submitted_by: user.id,
-            });
-
-            if (insertError) throw insertError;
-            setSharedIds((prev) => new Set(prev).add(id));
-            toast("Macro shared to the community library.", "success");
-        } catch (err) {
-            setError(extractErrorMessage(err));
-        } finally {
-            setSharingId(null);
-        }
-    }
-
-    async function handleExport(m: MacroSummary) {
-        try {
-            const json = await invoke<string>("export_macro_json", { id: m.id });
-            const blob = new Blob([json], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `${m.name.replace(/[^a-z0-9-_ ]/gi, "_")}.fragdesk-macro.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-            toast(`Exported "${m.name}".`, "success");
-        } catch (err) {
-            setError(String(err));
-        }
-    }
-
-    function handleImportClick() {
+    const handleImportClick = useCallback(() => {
         importFileInputRef.current?.click();
-    }
+    }, []);
 
-    async function handleImportFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-        const file = e.target.files?.[0];
-        e.target.value = ""; // allow re-selecting the same file later
-        if (!file) return;
+    const handleImportFileChange = useCallback(
+        async (e: React.ChangeEvent<HTMLInputElement>) => {
+            const file = e.target.files?.[0];
+            e.target.value = ""; // allow re-selecting the same file later
+            if (!file) return;
 
-        try {
-            const text = await file.text();
-            await invoke("import_macro_json", { json: text, source: null });
-            await refreshMacros();
-            toast(`Imported "${file.name}".`, "success");
-        } catch (err) {
-            setError(String(err));
-        }
-    }
+            try {
+                const text = await file.text();
+                await invoke("import_macro_json", { json: text, source: null });
+                await refreshMacros();
+                toast(`Imported "${file.name}".`, "success");
+            } catch (err) {
+                setError(String(err));
+            }
+        },
+        [refreshMacros, toast]
+    );
 
-    async function handleSetHotkey(id: string, hotkey: string) {
-        try {
-            await invoke("set_macro_hotkey", { id, hotkey });
-            setCapturingHotkeyId(null);
-            await refreshMacros();
-        } catch (err) {
-            setCapturingHotkeyId(null);
-            setError(String(err));
-        }
-    }
+    const handleSetHotkey = useCallback(
+        async (id: string, hotkey: string) => {
+            try {
+                await invoke("set_macro_hotkey", { id, hotkey });
+                setCapturingHotkeyId(null);
+                await refreshMacros();
+            } catch (err) {
+                setCapturingHotkeyId(null);
+                setError(String(err));
+            }
+        },
+        [refreshMacros]
+    );
 
-    async function handleClearHotkey(id: string) {
-        try {
-            await invoke("set_macro_hotkey", { id, hotkey: null });
-            await refreshMacros();
-        } catch (err) {
-            setError(String(err));
-        }
-    }
+    const handleClearHotkey = useCallback(
+        async (id: string) => {
+            try {
+                await invoke("set_macro_hotkey", { id, hotkey: null });
+                await refreshMacros();
+            } catch (err) {
+                setError(String(err));
+            }
+        },
+        [refreshMacros]
+    );
 
-    async function handleAddTag(m: MacroSummary) {
-        const tag = tagDraft.trim();
-        setTagDraft("");
-        setAddingTagToId(null);
-        if (!tag || m.tags.includes(tag)) return;
+    const handleAddTag = useCallback(
+        async (m: MacroSummary) => {
+            const tag = tagDraft.trim();
+            setTagDraft("");
+            setAddingTagToId(null);
+            if (!tag || m.tags.includes(tag)) return;
 
-        const newTags = [...m.tags, tag];
-        setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
-        try {
-            await invoke("set_macro_tags", { id: m.id, tags: newTags });
-        } catch (err) {
-            setError(String(err));
-            await refreshMacros();
-        }
-    }
+            const newTags = [...m.tags, tag];
+            setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
+            try {
+                await invoke("set_macro_tags", { id: m.id, tags: newTags });
+            } catch (err) {
+                setError(String(err));
+                await refreshMacros();
+            }
+        },
+        [tagDraft, refreshMacros]
+    );
 
-    async function handleRemoveTag(m: MacroSummary, tag: string) {
-        const newTags = m.tags.filter((t) => t !== tag);
-        setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
-        try {
-            await invoke("set_macro_tags", { id: m.id, tags: newTags });
-        } catch (err) {
-            setError(String(err));
-            await refreshMacros();
-        }
-    }
+    const handleRemoveTag = useCallback(
+        async (m: MacroSummary, tag: string) => {
+            const newTags = m.tags.filter((t) => t !== tag);
+            setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
+            try {
+                await invoke("set_macro_tags", { id: m.id, tags: newTags });
+            } catch (err) {
+                setError(String(err));
+                await refreshMacros();
+            }
+        },
+        [refreshMacros]
+    );
 
-    function toggleTagFilter(tag: string) {
+    const toggleTagFilter = useCallback((tag: string) => {
         setActiveTagFilters((prev) =>
             prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
         );
-    }
+    }, []);
+
+    const closeTagInput = useCallback(() => {
+        setAddingTagToId(null);
+        setTagDraft("");
+    }, []);
 
     const allTags = Array.from(new Set(macros.flatMap((m) => m.tags))).sort();
     const visibleMacros =
@@ -692,7 +742,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                 key={m.id}
                                 macro={m}
                                 isPlaying={playingId === m.id}
-                                progress={progress}
+                                progress={playingId === m.id ? progress : null}
                                 isRenaming={renamingId === m.id}
                                 renameDraft={renameDraft}
                                 isConfirmingDelete={confirmDeleteId === m.id}
@@ -703,22 +753,22 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                                 isAddingTag={addingTagToId === m.id}
                                 tagDraft={tagDraft}
                                 hasActivePlayback={playingId !== null}
-                                onStartRename={() => startRename(m)}
+                                onStartRename={startRename}
                                 onRenameChange={setRenameDraft}
                                 onCommitRename={commitRename}
                                 onCancelRename={cancelRename}
-                                onClearHotkey={() => handleClearHotkey(m.id)}
-                                onCaptureHotkey={() => setCapturingHotkeyId(m.id)}
-                                onAddTag={() => handleAddTag(m)}
-                                onRemoveTag={(tag) => handleRemoveTag(m, tag)}
+                                onClearHotkey={handleClearHotkey}
+                                onCaptureHotkey={setCapturingHotkeyId}
+                                onAddTag={handleAddTag}
+                                onRemoveTag={handleRemoveTag}
                                 onTagDraftChange={setTagDraft}
-                                onOpenTagInput={() => setAddingTagToId(m.id)}
-                                onCloseTagInput={() => setAddingTagToId(null)}
-                                onPlay={() => handlePlay(m.id)}
+                                onOpenTagInput={setAddingTagToId}
+                                onCloseTagInput={closeTagInput}
+                                onPlay={handlePlay}
                                 onStopPlayback={handleStopPlayback}
-                                onExport={() => handleExport(m)}
-                                onShareClick={() => handleShareClick(m.id)}
-                                onDeleteClick={() => handleDeleteClick(m.id)}
+                                onExport={handleExport}
+                                onShareClick={handleShareClick}
+                                onDeleteClick={handleDeleteClick}
                             />
                         ))}
                     </div>

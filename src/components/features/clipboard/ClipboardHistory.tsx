@@ -1,16 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Clipboard,
-  Copy,
   Pin,
-  Trash2,
   Search,
   PlayCircle,
   StopCircle,
-  Share2,
   X,
 } from 'lucide-react';
 import {
@@ -24,13 +21,7 @@ import {
 import { extractErrorMessage, isSupabaseConfigured, supabase } from '../../../community/supabaseClient';
 import { useAuth } from '../../../community/useAuth';
 import type { NavId } from '../../../features/registry';
-
-interface ClipboardItem {
-  id: number;
-  content: string;
-  timestamp: number;
-  is_pinned: boolean;
-}
+import ClipboardItemRow, { type ClipboardItem } from './ClipboardItemRow';
 
 interface ClipboardHistoryProps {
   setActiveTab: (tab: NavId) => void;
@@ -54,6 +45,13 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
 
   // Delete requires two confirm clicks; the second click on the same item acts.
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  // Ref mirror so the delete handler keeps a stable identity while still
+  // seeing the latest armed-confirmation value.
+  const confirmDeleteIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    confirmDeleteIdRef.current = confirmDeleteId;
+  }, [confirmDeleteId]);
 
   useEffect(() => {
     loadClipboardHistory();
@@ -76,7 +74,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
     return () => window.clearTimeout(t);
   }, [confirmDeleteId]);
 
-  const loadClipboardHistory = async () => {
+  const loadClipboardHistory = useCallback(async () => {
     try {
       const result = await invoke<ClipboardItem[]>('get_clipboard_items', { limit: 100 });
       const sorted = result.sort((a, b) => {
@@ -90,9 +88,9 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const toggleMonitoring = async () => {
+  const toggleMonitoring = useCallback(async () => {
     try {
       if (isMonitoring) {
         await invoke('stop_clipboard_monitor');
@@ -106,121 +104,127 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
     } catch (error) {
       setError(extractErrorMessage(error));
     }
-  };
+  }, [isMonitoring, toast]);
 
-  const saveCurrentClipboard = async () => {
+  const saveCurrentClipboard = useCallback(async () => {
     try {
       const text = await invoke<string>('get_current_clipboard');
       await invoke('save_clipboard_text', { text });
-      loadClipboardHistory();
+      await loadClipboardHistory();
       toast('Current clipboard saved to history.', 'success');
     } catch (error) {
       setError(extractErrorMessage(error));
     }
-  };
+  }, [loadClipboardHistory, toast]);
 
-  const copyToClipboard = async (text: string) => {
+  const copyToClipboard = useCallback(async (text: string) => {
     try {
       await invoke('copy_to_clipboard', { text });
       toast('Copied to clipboard.', 'success');
     } catch (error) {
       setError(extractErrorMessage(error));
     }
-  };
+  }, [toast]);
 
-  const deleteItem = async (id: number) => {
+  const deleteItem = useCallback(async (id: number) => {
     try {
       await invoke('delete_clipboard', { id });
-      loadClipboardHistory();
+      await loadClipboardHistory();
       toast('Item deleted.', 'success');
     } catch (error) {
       setError(extractErrorMessage(error));
     }
-  };
+  }, [loadClipboardHistory, toast]);
 
-  const togglePin = async (id: number) => {
+  const togglePin = useCallback(async (id: number) => {
     try {
       await invoke('toggle_pin', { id });
-      loadClipboardHistory();
+      await loadClipboardHistory();
     } catch (error) {
       setError(extractErrorMessage(error));
     }
-  };
+  }, [loadClipboardHistory]);
 
-  function handleShareClick(item: ClipboardItem) {
-    if (!isSupabaseConfigured) {
-      setError("Community sharing isn't set up yet — add Supabase credentials to .env first.");
-      return;
-    }
-    if (!user) {
-      setActiveTab('community');
-      return;
-    }
-    setSharingItemId(item.id);
-    setShareNameDraft('');
-  }
+  const handleDeleteClick = useCallback(
+    (id: number) => {
+      if (confirmDeleteIdRef.current === id) {
+        setConfirmDeleteId(null);
+        void deleteItem(id);
+      } else {
+        setConfirmDeleteId(id);
+      }
+    },
+    [deleteItem]
+  );
 
-  function handleCancelShare() {
+  const handleShareClick = useCallback(
+    (item: ClipboardItem) => {
+      if (!isSupabaseConfigured) {
+        setError("Community sharing isn't set up yet — add Supabase credentials to .env first.");
+        return;
+      }
+      if (!user) {
+        setActiveTab('community');
+        return;
+      }
+      setSharingItemId(item.id);
+      setShareNameDraft('');
+    },
+    [user, setActiveTab]
+  );
+
+  const handleCancelShare = useCallback(() => {
     setSharingItemId(null);
     setShareNameDraft('');
-  }
+  }, []);
 
-  async function handleSubmitShare(item: ClipboardItem) {
-    if (!supabase || !user) return;
-    const name = shareNameDraft.trim();
-    if (!name) return;
+  const handleSubmitShare = useCallback(
+    async (item: ClipboardItem) => {
+      if (!supabase || !user) return;
+      const name = shareNameDraft.trim();
+      if (!name) return;
 
-    setSubmittingShareId(item.id);
-    setError(null);
-    try {
-      const json = await invoke<string>('export_clipboard_snippet_json', {
-        content: item.content,
-        name,
-        tags: [],
-      });
-      const fragment = JSON.parse(json) as {
-        fragment_type: string;
-        name: string;
-        tags: string[];
-        format_version: number;
-        payload: unknown;
-      };
+      setSubmittingShareId(item.id);
+      setError(null);
+      try {
+        const json = await invoke<string>('export_clipboard_snippet_json', {
+          content: item.content,
+          name,
+          tags: [],
+        });
+        const fragment = JSON.parse(json) as {
+          fragment_type: string;
+          name: string;
+          tags: string[];
+          format_version: number;
+          payload: unknown;
+        };
 
-      const { error: insertError } = await supabase.from('fragments').insert({
-        fragment_type: fragment.fragment_type,
-        name: fragment.name,
-        tags: fragment.tags,
-        format_version: fragment.format_version,
-        payload: fragment.payload,
-        submitted_by: user.id,
-      });
+        const { error: insertError } = await supabase.from('fragments').insert({
+          fragment_type: fragment.fragment_type,
+          name: fragment.name,
+          tags: fragment.tags,
+          format_version: fragment.format_version,
+          payload: fragment.payload,
+          submitted_by: user.id,
+        });
 
-      if (insertError) throw insertError;
-      setSharedIds((prev) => new Set(prev).add(item.id));
-      handleCancelShare();
-      toast('Snippet shared to the community library.', 'success');
-    } catch (err) {
-      setError(extractErrorMessage(err));
-    } finally {
-      setSubmittingShareId(null);
-    }
-  }
+        if (insertError) throw insertError;
+        setSharedIds((prev) => new Set(prev).add(item.id));
+        handleCancelShare();
+        toast('Snippet shared to the community library.', 'success');
+      } catch (err) {
+        setError(extractErrorMessage(err));
+      } finally {
+        setSubmittingShareId(null);
+      }
+    },
+    [shareNameDraft, user, handleCancelShare, toast]
+  );
 
   const filteredItems = items.filter(item =>
     item.content.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  const formatTimestamp = (timestamp: number) => {
-    const date = new Date(timestamp * 1000);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
-    return date.toLocaleDateString();
-  };
 
   const sharingItem = sharingItemId !== null ? items.find((i) => i.id === sharingItemId) : null;
 
@@ -334,82 +338,15 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
                       item.is_pinned ? 'border-frag-accent' : 'border-frag-border'
                     }`}
                   >
-                    <div className="flex items-start gap-4">
-                      {item.is_pinned && (
-                        <Pin size={16} className="text-frag-accent mt-1 fill-frag-accent" />
-                      )}
-
-                      <div className="flex-1 min-w-0">
-                        <p className="text-frag-text break-words line-clamp-3 overflow-hidden">
-                          {item.content}
-                        </p>
-                        <div className="flex items-center gap-3 mt-2">
-                          <p className="text-xs text-frag-muted">
-                            {formatTimestamp(item.timestamp)}
-                          </p>
-                          <p className="text-xs text-frag-muted">
-                            {item.content.length} characters
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Actions: always visible on small screens, hover-reveal on md+ */}
-                      <div className="flex gap-2 shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => copyToClipboard(item.content)}
-                          aria-label="Copy to clipboard"
-                          className="p-2 bg-frag-primary/10 text-frag-primary rounded-lg hover:bg-frag-primary/20 transition-colors"
-                        >
-                          <Copy size={16} />
-                        </button>
-                        {sharedIds.has(item.id) ? (
-                          <span
-                            className="p-2 bg-frag-success/10 text-frag-success rounded-lg"
-                            title="Shared to Community Library"
-                          >
-                            <Share2 size={16} />
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => handleShareClick(item)}
-                            aria-label="Share to Community Library"
-                            className="p-2 bg-frag-primary/10 text-frag-primary rounded-lg hover:bg-frag-primary/20 transition-colors"
-                          >
-                            <Share2 size={16} />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => togglePin(item.id)}
-                          aria-pressed={item.is_pinned}
-                          aria-label={item.is_pinned ? 'Unpin item' : 'Pin item'}
-                          className="p-2 bg-frag-accent/10 text-frag-accent rounded-lg hover:bg-frag-accent/20 transition-colors"
-                        >
-                          <Pin size={16} className={item.is_pinned ? 'fill-frag-accent' : ''} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirmDeleteId === item.id) {
-                              setConfirmDeleteId(null);
-                              deleteItem(item.id);
-                            } else {
-                              setConfirmDeleteId(item.id);
-                            }
-                          }}
-                          aria-label={
-                            confirmDeleteId === item.id
-                              ? 'Confirm delete item'
-                              : 'Delete item'
-                          }
-                          className={`p-2 rounded-lg transition-colors ${
-                            confirmDeleteId === item.id
-                              ? 'bg-frag-danger text-frag-bg hover:bg-frag-danger/90'
-                              : 'bg-frag-danger/10 text-frag-danger hover:bg-frag-danger/20'
-                          }`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
+                    <ClipboardItemRow
+                      item={item}
+                      isShared={sharedIds.has(item.id)}
+                      isConfirmingDelete={confirmDeleteId === item.id}
+                      onCopy={copyToClipboard}
+                      onShare={handleShareClick}
+                      onTogglePin={togglePin}
+                      onDelete={handleDeleteClick}
+                    />
                   </motion.div>
                 ))
               )}

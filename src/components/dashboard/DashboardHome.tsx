@@ -223,6 +223,10 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
     }
   }, [toast]);
 
+  // Stable navigation handler so the StatCard / spotlight / grid children
+  // don't receive a fresh closure on every parent render.
+  const navigate = useCallback((tab: NavId) => setActiveTab(tab), [setActiveTab]);
+
   return (
     <div className="min-h-full bg-frag-bg text-frag-text">
       {/* Welcome row */}
@@ -270,7 +274,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
               label="Total Clips"
               value={stats.clipCount ?? '--'}
               accent="text-frag-primary"
-              onClick={() => setActiveTab('clipboard')}
+              onClick={() => navigate('clipboard')}
               sparkline={
                 <Sparkline id="clip" color={clipColor} data={clipSeries} />
               }
@@ -280,7 +284,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
               label="Saved Macros"
               value={stats.macroCount ?? '--'}
               accent="text-frag-accent"
-              onClick={() => setActiveTab('macros')}
+              onClick={() => navigate('macros')}
               sparkline={
                 <Sparkline id="macro" color={macroColor} data={macroSeries} />
               }
@@ -290,7 +294,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
               label="CPU Usage"
               value={stats.cpuUsage !== null ? `${stats.cpuUsage.toFixed(0)}%` : '--'}
               accent="text-frag-success"
-              onClick={() => setActiveTab('monitor')}
+              onClick={() => navigate('monitor')}
               sparkline={
                 <Sparkline id="cpu" color={cpuColor} data={cpuSeries} />
               }
@@ -337,7 +341,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
                   <Button
                     variant="secondary"
                     className="whitespace-nowrap"
-                    onClick={() => setActiveTab(feature.id)}
+                    onClick={() => navigate(feature.id)}
                   >
                     Explore
                     <ArrowRight size={16} />
@@ -391,7 +395,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
                     initial="hidden"
                     animate="show"
                     whileHover={{ x: 6 }}
-                    onClick={() => setActiveTab(feature.id)}
+                    onClick={() => navigate(feature.id)}
                     className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-5 flex items-center gap-4 md:gap-5 text-left cursor-pointer group hover:border-frag-primary/40 transition-colors"
                   >
                     <div className={`${accent.bgColor} p-3 rounded-lg shrink-0`}>
