@@ -30,6 +30,8 @@ use commands::onboarding::{has_completed_onboarding, mark_onboarding_completed};
 
 use commands::theme::{get_ui_theme, set_ui_theme};
 
+use commands::data::wipe_local_data;
+
 use commands::fps::{
     get_fps_stats, list_rtss_apps, set_fps_tracking_target, FpsMonitorState,
 };
@@ -161,6 +163,8 @@ pub fn run() {
             // Theme commands
             get_ui_theme,
             set_ui_theme,
+            // Data commands
+            wipe_local_data,
             // FPS commands
             get_fps_stats,
             list_rtss_apps,
