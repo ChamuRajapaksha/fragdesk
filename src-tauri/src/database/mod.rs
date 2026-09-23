@@ -105,6 +105,18 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// Deletes every row from the user-data tables (macros, clipboard history,
+/// monitor alert rules) and clears the `settings` store -- the record
+/// hotkey, UI theme, and onboarding-completed flag all reset to their
+/// first-run defaults along with user data. A true factory reset.
+pub fn wipe_all_data(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM macros", [])?;
+    conn.execute("DELETE FROM clipboard_history", [])?;
+    conn.execute("DELETE FROM monitor_alert_rules", [])?;
+    conn.execute("DELETE FROM settings", [])?;
+    Ok(())
+}
+
 fn get_db_path() -> PathBuf {
     let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("FragDesk");

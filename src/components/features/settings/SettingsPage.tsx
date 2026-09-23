@@ -3,8 +3,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { Settings } from 'lucide-react';
 import { applyPalette, PALETTES, type Palette } from '../../../themes';
 import { PageHeader, useToast } from '../../../components/ui';
+import type { NavId } from '../../../features/registry';
+import AccountSection from './AccountSection';
 
-export default function SettingsPage() {
+interface SettingsPageProps {
+  setActiveTab?: (tab: NavId) => void;
+}
+
+export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
   const { toast } = useToast();
   const [recordHotkey, setRecordHotkey] = useState<string>('F9');
   const [isCapturing, setIsCapturing] = useState(false);
@@ -41,6 +47,11 @@ export default function SettingsPage() {
     invoke('set_ui_theme', { theme: palette.id })
       .then(() => toast(`"${palette.name}" palette applied`, 'success'))
       .catch((err) => toast(String(err), 'error'));
+  }
+
+  function handleAccountDeleted() {
+    setPaletteId('neon');
+    setRecordHotkey('F9');
   }
 
   useEffect(() => {
@@ -184,6 +195,9 @@ export default function SettingsPage() {
             })}
           </div>
         </section>
+
+        {/* Account */}
+        <AccountSection setActiveTab={setActiveTab} onAccountDeleted={handleAccountDeleted} />
 
         {/* About */}
         <section className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 space-y-2">

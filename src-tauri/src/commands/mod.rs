@@ -8,3 +8,4 @@ pub mod onboarding;
 pub mod fps;
 pub mod gpu;
 pub mod theme;
+pub mod data;
