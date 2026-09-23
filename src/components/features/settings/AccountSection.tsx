@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { UserCircle2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { Trash2, UserCircle2 } from 'lucide-react';
 import {
   extractErrorMessage,
   isSupabaseConfigured,
@@ -7,10 +8,12 @@ import {
 } from '../../../community/supabaseClient';
 import { useAuth } from '../../../community/useAuth';
 import { useToast } from '../../ui';
+import { applyPaletteById, DEFAULT_PALETTE_ID } from '../../../themes';
 import type { NavId } from '../../../features/registry';
 
 interface AccountSectionProps {
   setActiveTab?: (tab: NavId) => void;
+  onAccountDeleted?: () => void;
 }
 
 function PasswordInput({
@@ -72,7 +75,7 @@ function PasswordInput({
   );
 }
 
-export default function AccountSection({ setActiveTab }: AccountSectionProps) {
+export default function AccountSection({ setActiveTab, onAccountDeleted }: AccountSectionProps) {
   const { user, loading, signOut } = useAuth();
   const { toast } = useToast();
 
@@ -81,6 +84,64 @@ export default function AccountSection({ setActiveTab }: AccountSectionProps) {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [changing, setChanging] = useState(false);
+
+  const [typedEmail, setTypedEmail] = useState('');
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const deleteArmTimer = useRef<number | null>(null);
+
+  const emailMatches = user !== null && typedEmail.trim().toLowerCase() === user.email?.toLowerCase();
+
+  useEffect(
+    () => () => {
+      if (deleteArmTimer.current !== null) window.clearTimeout(deleteArmTimer.current);
+    },
+    []
+  );
+
+  function armDelete() {
+    if (!emailMatches) return;
+    setDeleteArmed(true);
+    if (deleteArmTimer.current !== null) window.clearTimeout(deleteArmTimer.current);
+    deleteArmTimer.current = window.setTimeout(() => setDeleteArmed(false), 4000);
+  }
+
+  async function handleDeleteAccount() {
+    if (!supabase || !user) return;
+    setDeleting(true);
+    try {
+      // 1. Delete the online account. Deleting the user revokes their JWT
+      //    mid-call, so Supabase can reply with a revoked-token or
+      //    expired-JWT error even though the deletion fully succeeded --
+      //    treat those as success.
+      const { error: rpcError } = await supabase.rpc('delete_account');
+      const rpcMessage = rpcError?.message ?? '';
+      if (rpcError && !/jwt|expired|revok/i.test(rpcMessage)) throw rpcError;
+
+      // 2. Factory-reset the local SQLite database (macros, clipboard
+      //    history, alert rules, and the settings store).
+      await invoke('wipe_local_data');
+
+      // 3. Clear the in-memory session. Swallow any error -- the account
+      //    is already gone, local data is already gone; failing to sign
+      //    out cleanly is irrelevant at this point.
+      try {
+        await signOut();
+      } catch {
+        // ignore
+      }
+
+      applyPaletteById(DEFAULT_PALETTE_ID);
+      onAccountDeleted?.();
+      toast('Account and data deleted', 'success');
+    } catch (err) {
+      toast(extractErrorMessage(err), 'error');
+    } finally {
+      setDeleting(false);
+      setDeleteArmed(false);
+      setTypedEmail('');
+    }
+  }
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -224,6 +285,54 @@ export default function AccountSection({ setActiveTab }: AccountSectionProps) {
           {changing ? 'Updating…' : 'Change password'}
         </button>
       </form>
+
+      {/* Danger zone: delete account and data */}
+      <div className="border-t border-frag-border pt-4 space-y-3 max-w-sm">
+        <div className="flex items-center gap-3">
+          <Trash2 size={18} className="text-frag-danger shrink-0" />
+          <h3 className="text-base font-semibold text-frag-danger">Delete account and data</h3>
+        </div>
+        <p className="text-sm text-frag-muted break-words">
+          Permanently deletes your Community account, removes what you&apos;ve shared, and wipes
+          all local FragDesk data — macros, clipboard history, monitor alerts, and settings. This
+          cannot be undone.
+        </p>
+        <div className="space-y-2">
+          <label htmlFor="account-delete-email" className="sr-only">
+            Confirm by typing your email
+          </label>
+          <input
+            id="account-delete-email"
+            type="email"
+            placeholder="Type your email to confirm"
+            value={typedEmail}
+            onChange={(e) => {
+              setTypedEmail(e.target.value);
+              setDeleteArmed(false);
+            }}
+            className="w-full bg-frag-bg border border-frag-border rounded-lg px-3 py-2.5 text-sm text-frag-text placeholder:text-frag-muted focus:outline-none focus:border-frag-danger focus:ring-1 focus:ring-frag-danger/30 transition-colors"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (deleteArmed) {
+                void handleDeleteAccount();
+              } else {
+                armDelete();
+              }
+            }}
+            disabled={!emailMatches || deleting}
+            aria-live="polite"
+            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+              deleteArmed
+                ? 'bg-frag-danger text-frag-bg border-frag-danger hover:bg-frag-danger/80'
+                : 'border-frag-danger text-frag-danger hover:bg-frag-danger/10'
+            }`}
+          >
+            {deleting ? 'Deleting…' : deleteArmed ? 'Click again to confirm' : 'Delete account'}
+          </button>
+        </div>
+      </div>
     </section>
   );
 }
