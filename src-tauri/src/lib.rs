@@ -40,7 +40,7 @@ use commands::fps::{
 
 use commands::gpu::get_gpu_stats;
 
-use commands::monitor::{get_cpu_per_core, get_system_stats};
+use commands::monitor::{get_cpu_per_core, get_system_stats, SystemMonitorState};
 use commands::permissions::check_recording_permission;
 use hotkey::canonicalize_hotkey;
 use tauri::Manager;
@@ -64,6 +64,7 @@ pub fn run() {
         .manage(MacroPlayback::new())
         .manage(HotkeyRegistry::new())
         .manage(FpsMonitorState::new())
+        .manage(SystemMonitorState::new())
         .setup(|app| {
             let handle = app.handle().clone();
 
