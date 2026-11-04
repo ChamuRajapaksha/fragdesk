@@ -27,6 +27,12 @@ interface ClipboardHistoryProps {
   setActiveTab: (tab: NavId) => void;
 }
 
+interface ClipboardMonitorStatus {
+  running: boolean;
+  last_error: string | null;
+  last_sample_at: number | null;
+}
+
 export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -53,8 +59,19 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
     confirmDeleteIdRef.current = confirmDeleteId;
   }, [confirmDeleteId]);
 
+  const refreshMonitorStatus = useCallback(async () => {
+    try {
+      const status = await invoke<ClipboardMonitorStatus>('get_clipboard_monitor_status');
+      setIsMonitoring(status.running);
+      setError(status.last_error ?? null);
+    } catch (error) {
+      setError(extractErrorMessage(error));
+    }
+  }, []);
+
   useEffect(() => {
     loadClipboardHistory();
+    refreshMonitorStatus();
 
     const unlisten = listen('clipboard-updated', () => {
       loadClipboardHistory();
@@ -83,6 +100,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
         return b.timestamp - a.timestamp;
       });
       setItems(sorted);
+      setError(null);
     } catch (error) {
       setError(extractErrorMessage(error));
     } finally {
@@ -94,17 +112,24 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
     try {
       if (isMonitoring) {
         await invoke('stop_clipboard_monitor');
-        setIsMonitoring(false);
+        await refreshMonitorStatus();
         toast('Clipboard monitoring stopped.', 'info');
       } else {
         await invoke('start_clipboard_monitor');
-        setIsMonitoring(true);
-        toast('Clipboard monitoring started.', 'success');
+        const status = await invoke<ClipboardMonitorStatus>('get_clipboard_monitor_status');
+        setIsMonitoring(status.running);
+        if (status.last_error) {
+          setError(status.last_error);
+          toast('Clipboard monitoring could not start.', 'error');
+        } else {
+          setError(null);
+          toast('Clipboard monitoring started.', 'success');
+        }
       }
     } catch (error) {
       setError(extractErrorMessage(error));
     }
-  }, [isMonitoring, toast]);
+  }, [isMonitoring, refreshMonitorStatus, toast]);
 
   const saveCurrentClipboard = useCallback(async () => {
     try {
