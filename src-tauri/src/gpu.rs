@@ -84,9 +84,14 @@ mod windows_impl {
     }
 
     pub fn get_gpu_stats() -> Result<Option<GpuStats>, String> {
-        let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.ok();
+        // Only uninitialize COM if this thread actually initialized it. A
+        // failed CoInitializeEx (e.g. RPC_E_CHANGED_MODE) must not be paired
+        // with CoUninitialize, which would tear down someone else's state.
+        let initialized = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
         let result = get_gpu_stats_inner();
-        unsafe { CoUninitialize() };
+        if initialized {
+            unsafe { CoUninitialize() };
+        }
         result
     }
 

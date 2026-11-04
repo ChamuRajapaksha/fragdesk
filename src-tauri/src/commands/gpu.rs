@@ -6,6 +6,8 @@ use crate::gpu::GpuStats;
 /// queried -- the frontend renders that as a muted "No GPU detected"
 /// card rather than an error.
 #[tauri::command]
-pub fn get_gpu_stats() -> Result<Option<GpuStats>, String> {
-    gpu::get_gpu_stats()
+pub async fn get_gpu_stats() -> Result<Option<GpuStats>, String> {
+    tauri::async_runtime::spawn_blocking(gpu::get_gpu_stats)
+        .await
+        .map_err(|err| format!("GPU sampling task failed: {err}"))?
 }
