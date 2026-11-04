@@ -87,7 +87,7 @@ pub struct RecordingPreview {
 
 /// The DB key under which the record-toggle hotkey is persisted (via the
 /// generic `settings` table).
-const RECORD_HOTKEY_SETTING_KEY: &str = "record_toggle_hotkey";
+pub const RECORD_HOTKEY_SETTING_KEY: &str = "record_toggle_hotkey";
 
 /// Fallback used the very first time the app runs, before any hotkey has
 /// been saved.

@@ -1,11 +1,15 @@
+use crate::hotkey::canonicalize_hotkey;
 use rusqlite::{Connection, Result};
 use std::path::PathBuf;
 
 pub fn init_database() -> Result<Connection> {
     let db_path = get_db_path();
     let conn = Connection::open(db_path)?;
+    initialize_schema(&conn)?;
+    Ok(conn)
+}
 
-
+fn initialize_schema(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS monitor_alert_rules (
             id TEXT PRIMARY KEY,
@@ -83,7 +87,53 @@ pub fn init_database() -> Result<Connection> {
         [],
     )?;
 
-    Ok(conn)
+    normalize_stored_hotkeys(conn)?;
+
+    Ok(())
+}
+
+/// Rewrites any persisted hotkey that isn't already in the global-shortcut
+/// plugin's canonical form (`shift+control+F9`, not `Ctrl+Shift+F9`). Both
+/// the record-toggle setting and every macro hotkey are normalized, so a
+/// value loaded at startup compares equal to the string the plugin's
+/// handler emits when that key actually fires.
+fn normalize_stored_hotkeys(conn: &Connection) -> Result<()> {
+    const RECORD_HOTKEY_SETTING_KEY: &str = "record_toggle_hotkey";
+
+    if let Some(raw) = get_setting(conn, RECORD_HOTKEY_SETTING_KEY)? {
+        if let Ok(canonical) = canonicalize_hotkey(&raw) {
+            if canonical != raw {
+                set_setting(conn, RECORD_HOTKEY_SETTING_KEY, &canonical)?;
+            }
+        }
+    }
+
+    let updates: Vec<(String, String)> = {
+        let mut stmt = conn.prepare("SELECT id, hotkey FROM macros WHERE hotkey IS NOT NULL")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut updates = Vec::new();
+        for row in rows {
+            let (id, raw) = row?;
+            if let Ok(canonical) = canonicalize_hotkey(&raw) {
+                if canonical != raw {
+                    updates.push((id, canonical));
+                }
+            }
+        }
+        updates
+    };
+
+    for (id, canonical) in updates {
+        conn.execute(
+            "UPDATE macros SET hotkey = ?1 WHERE id = ?2",
+            rusqlite::params![canonical, id],
+        )?;
+    }
+
+    Ok(())
 }
 
 pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>> {
@@ -476,5 +526,51 @@ pub fn toggle_alert_rule_item(conn: &Connection, id: &str) -> Result<()> {
         rusqlite::params![id],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod hotkey_normalization_tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_record_and_macro_hotkeys_to_handler_form() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        set_setting(&conn, "record_toggle_hotkey", "Ctrl+Shift+F9").unwrap();
+        conn.execute(
+            "INSERT INTO macros
+                (id, name, created_at, event_count, duration_ms, events_json, hotkey)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                "m1",
+                "Test macro",
+                0,
+                0,
+                0,
+                "[]",
+                "CommandOrControl+Alt+KeyA"
+            ],
+        )
+        .unwrap();
+
+        normalize_stored_hotkeys(&conn).unwrap();
+
+        let record = get_setting(&conn, "record_toggle_hotkey")
+            .unwrap()
+            .unwrap();
+        assert_eq!(record, "shift+control+F9");
+
+        let stored = load_hotkey_map(&conn).unwrap();
+        assert_eq!(stored.len(), 1);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(stored[0].0, "control+alt+KeyA");
+        #[cfg(target_os = "macos")]
+        assert_eq!(stored[0].0, "super+alt+KeyA");
+
+        // The persisted value is already in the exact form the shortcut
+        // handler receives from the plugin when the key fires.
+        assert_eq!(canonicalize_hotkey(&stored[0].0).unwrap(), stored[0].0);
+    }
 }
  

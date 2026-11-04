@@ -16,6 +16,7 @@ use commands::macros::{
     load_record_hotkey, play_macro, rename_macro, save_macro_recording, set_macro_hotkey,
     set_macro_tags, set_record_hotkey, start_macro_recording, stop_macro_playback,
     stop_macro_recording, HotkeyRegistry, MacroPlayback, MacroRecorder, RecordHotkeyState,
+    DEFAULT_RECORD_HOTKEY, RECORD_HOTKEY_SETTING_KEY,
 };
 use commands::alerts::{
     create_alert_rule, delete_alert_rule, export_alert_rule_json,
@@ -41,6 +42,7 @@ use commands::gpu::get_gpu_stats;
 
 use commands::monitor::{get_cpu_per_core, get_system_stats};
 use commands::permissions::check_recording_permission;
+use hotkey::canonicalize_hotkey;
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -76,7 +78,25 @@ pub fn run() {
             // "F9" default on first run), register it, and make it
             // available to commands/the shortcut handler via managed state.
             if let Ok(conn) = database::init_database() {
-                let hotkey = load_record_hotkey(&conn);
+                let saved_hotkey = load_record_hotkey(&conn);
+                let hotkey = match canonicalize_hotkey(&saved_hotkey) {
+                    Ok(canonical) => canonical,
+                    Err(err) => {
+                        eprintln!(
+                            "[macros] saved record-toggle hotkey '{saved_hotkey}' is invalid ({err}); \
+                             falling back to {DEFAULT_RECORD_HOTKEY}"
+                        );
+                        commands::macros::DEFAULT_RECORD_HOTKEY.to_string()
+                    }
+                };
+
+                if hotkey != saved_hotkey {
+                    let _ = database::set_setting(
+                        &conn,
+                        RECORD_HOTKEY_SETTING_KEY,
+                        &hotkey,
+                    );
+                }
 
                 if let Err(err) = handle.global_shortcut().register(hotkey.as_str()) {
                     eprintln!("[macros] failed to register record-toggle hotkey '{hotkey}': {err}");
@@ -89,6 +109,15 @@ pub fn run() {
                 if let Ok(pairs) = database::load_hotkey_map(&conn) {
                     let registry = handle.state::<HotkeyRegistry>();
                     for (hotkey, macro_id) in pairs {
+                        let hotkey = match canonicalize_hotkey(&hotkey) {
+                            Ok(canonical) => canonical,
+                            Err(err) => {
+                                eprintln!(
+                                    "[macros] skipping invalid saved macro hotkey '{hotkey}': {err}"
+                                );
+                                continue;
+                            }
+                        };
                         match handle.global_shortcut().register(hotkey.as_str()) {
                             Ok(_) => {
                                 registry.map.lock().unwrap().insert(hotkey, macro_id);
