@@ -5,6 +5,7 @@ use crate::database::{
     set_setting, MacroEvent, MacroItem, MacroSummary,
 };
 use crate::fragments::{Fragment, FragmentPayload, FRAGMENT_FORMAT_VERSION};
+use crate::hotkey::canonicalize_hotkey;
 use rdev::{listen, simulate, Button, EventType, Key};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -125,6 +126,8 @@ pub fn set_record_hotkey(
     state: tauri::State<'_, RecordHotkeyState>,
     hotkey: String,
 ) -> Result<(), String> {
+    // Reject malformed input before touching the OS keyboard state.
+    let hotkey = canonicalize_hotkey(&hotkey)?;
     let conn = init_database().map_err(|e| e.to_string())?;
 
     if get_macro_id_by_hotkey(&conn, &hotkey)
@@ -135,18 +138,24 @@ pub fn set_record_hotkey(
     }
 
     let old = state.current.lock().unwrap().clone();
+    if old == hotkey {
+        return Ok(());
+    }
 
+    // Register the replacement before releasing the old binding, so a
+    // failed registration leaves the previous hotkey working.
     app_handle
         .global_shortcut()
         .register(hotkey.as_str())
         .map_err(|e| format!("Failed to register hotkey '{hotkey}': {e}"))?;
 
-    if old != hotkey {
-        let _ = app_handle.global_shortcut().unregister(old.as_str());
+    if let Err(err) = set_setting(&conn, RECORD_HOTKEY_SETTING_KEY, &hotkey) {
+        let _ = app_handle.global_shortcut().unregister(hotkey.as_str());
+        return Err(err.to_string());
     }
 
-    *state.current.lock().unwrap() = hotkey.clone();
-    set_setting(&conn, RECORD_HOTKEY_SETTING_KEY, &hotkey).map_err(|e| e.to_string())?;
+    let _ = app_handle.global_shortcut().unregister(old.as_str());
+    *state.current.lock().unwrap() = hotkey;
 
     Ok(())
 }
@@ -505,6 +514,12 @@ pub fn set_macro_hotkey(
     id: String,
     hotkey: Option<String>,
 ) -> Result<(), String> {
+    // Reject malformed input before touching the OS keyboard state.
+    let hotkey = match hotkey {
+        Some(raw) => Some(canonicalize_hotkey(&raw)?),
+        None => None,
+    };
+
     let conn = init_database().map_err(|e| e.to_string())?;
 
     let existing_hotkey = get_macro_by_id(&conn, &id)
@@ -519,23 +534,35 @@ pub fn set_macro_hotkey(
         }
     }
 
-    // Unregister the old binding if it's being replaced or cleared.
-    if let Some(old_key) = &existing_hotkey {
-        if hotkey.as_deref() != Some(old_key.as_str()) {
-            let _ = app_handle.global_shortcut().unregister(old_key.as_str());
-            registry.map.lock().unwrap().remove(old_key);
-        }
+    if existing_hotkey.as_deref() == hotkey.as_deref() {
+        return Ok(());
     }
 
+    // Register the replacement before releasing the old binding, so a
+    // failed registration leaves the previous hotkey working.
     if let Some(new_key) = &hotkey {
         app_handle
             .global_shortcut()
             .register(new_key.as_str())
             .map_err(|e| format!("Failed to register hotkey '{new_key}': {e}"))?;
+    }
+
+    if let Err(err) = set_macro_hotkey_item(&conn, &id, hotkey.as_deref()) {
+        if let Some(new_key) = &hotkey {
+            let _ = app_handle.global_shortcut().unregister(new_key.as_str());
+        }
+        return Err(err.to_string());
+    }
+
+    // Persistence succeeded -- now it's safe to release the old binding.
+    if let Some(old_key) = &existing_hotkey {
+        let _ = app_handle.global_shortcut().unregister(old_key.as_str());
+        registry.map.lock().unwrap().remove(old_key);
+    }
+    if let Some(new_key) = &hotkey {
         registry.map.lock().unwrap().insert(new_key.clone(), id.clone());
     }
 
-    set_macro_hotkey_item(&conn, &id, hotkey.as_deref()).map_err(|e| e.to_string())?;
     Ok(())
 }
 
