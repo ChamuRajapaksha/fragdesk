@@ -9,6 +9,10 @@ use tauri::{AppHandle, Emitter};
 pub struct ClipboardMonitor {
     pub is_running: Arc<Mutex<bool>>,
     pub last_content: Arc<Mutex<String>>,
+    /// Why the worker last stopped unexpectedly, if it did. Surfaced by the
+    /// status query so the UI can explain a monitor that looks "off" after
+    /// the user just started it.
+    pub last_error: Arc<Mutex<Option<String>>>,
 }
 
 impl ClipboardMonitor {
@@ -16,6 +20,7 @@ impl ClipboardMonitor {
         Self {
             is_running: Arc::new(Mutex::new(false)),
             last_content: Arc::new(Mutex::new(String::new())),
+            last_error: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -35,10 +40,21 @@ pub fn start_clipboard_monitor(
     
     let is_running_clone = state.is_running.clone();
     let last_content_clone = state.last_content.clone();
-    
+    let last_error_clone = state.last_error.clone();
+
+    *state.last_error.lock().unwrap() = None;
+
     thread::spawn(move || {
-        let mut clipboard = Clipboard::new().unwrap();
-        
+        let mut clipboard = match Clipboard::new() {
+            Ok(clipboard) => clipboard,
+            Err(err) => {
+                *last_error_clone.lock().unwrap() =
+                    Some(format!("Failed to access the system clipboard: {err}"));
+                *is_running_clone.lock().unwrap() = false;
+                return;
+            }
+        };
+
         loop {
             // Check if we should stop
             {
@@ -67,6 +83,10 @@ pub fn start_clipboard_monitor(
             
             thread::sleep(Duration::from_millis(500));
         }
+
+        // The worker is the authority on whether monitoring is actually
+        // running -- never leave a stale `true` behind if it exits.
+        *is_running_clone.lock().unwrap() = false;
     });
     
     Ok("Monitoring started".to_string())
