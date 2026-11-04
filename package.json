@@ -12,7 +12,6 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2",
     "framer-motion": "^12.34.5",
     "lucide-react": "^0.576.0",
     "react": "^19.1.0",
