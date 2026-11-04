@@ -34,10 +34,13 @@ pub fn read_rtss_apps() -> Result<Vec<RtssApp>, String> {
 #[cfg(target_os = "windows")]
 mod windows_impl {
     use super::RtssApp;
+    use std::ffi::c_void;
+    use std::mem::size_of;
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Memory::{
-        MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, FILE_MAP_READ,
+        MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, VirtualQuery, FILE_MAP_READ,
+        MEMORY_BASIC_INFORMATION,
     };
 
     const RTSS_MAPPING_NAME: &str = "RTSSSharedMemoryV2";
@@ -87,6 +90,11 @@ mod windows_impl {
 
     const MAX_APPS_TO_READ: usize = 256;
 
+    // Signature(4) + dwAppEntrySize(4) + dwAppArrOffset(4) + dwAppArrSize(4)
+    // plus the four bytes at offset 4 this reader skips. Everything before
+    // dwAppArrOffset is header, never entry data.
+    const RTSS_HEADER_MIN_LEN: usize = 20;
+
     pub fn read() -> Result<Vec<RtssApp>, String> {
         let wide_name = to_wide(RTSS_MAPPING_NAME);
 
@@ -114,15 +122,42 @@ mod windows_impl {
         }
 
         let base = view.Value as *const u8;
-        let result = parse(base);
+
+        // MapViewOfFile(0, 0, 0) maps the whole section, but the header must
+        // never be trusted to describe a region larger than what Windows
+        // actually mapped. VirtualQuery gives us the real committed length.
+        let mut region = MEMORY_BASIC_INFORMATION::default();
+        let queried = VirtualQuery(
+            Some(base as *const c_void),
+            &mut region,
+            size_of::<MEMORY_BASIC_INFORMATION>(),
+        );
+
+        let result = if queried == 0 || region.RegionSize == 0 {
+            Err("Failed to query the mapped RTSS shared-memory region".to_string())
+        } else {
+            let data = std::slice::from_raw_parts(base, region.RegionSize);
+            parse(data)
+        };
 
         let _ = UnmapViewOfFile(view);
 
         result
     }
 
-    unsafe fn parse(base: *const u8) -> Result<Vec<RtssApp>, String> {
-        let signature = std::slice::from_raw_parts(base, 4);
+    /// Validates the fixed header, then walks app entries using the header's
+    /// own stride/offset fields. Every offset and range is checked against
+    /// `data.len()`; a hostile or version-mismatched header is rejected
+    /// rather than allowed to read outside the mapped region.
+    fn parse(data: &[u8]) -> Result<Vec<RtssApp>, String> {
+        if data.len() < 4 {
+            return Err(format!(
+                "RTSS shared memory is too small ({} bytes) to contain a signature",
+                data.len()
+            ));
+        }
+
+        let signature = &data[0..4];
         if signature != RTSS_SIGNATURE && signature != RTSS_SIGNATURE_ALT {
             return Err(format!(
                 "RTSS shared memory signature mismatch -- found bytes {:02X?} \
@@ -133,15 +168,35 @@ mod windows_impl {
             ));
         }
 
-        let read_u32 = |offset: usize| -> u32 {
-            let mut bytes = [0u8; 4];
-            bytes.copy_from_slice(std::slice::from_raw_parts(base.add(offset), 4));
-            u32::from_le_bytes(bytes)
+        if data.len() < RTSS_HEADER_MIN_LEN {
+            return Err(format!(
+                "RTSS shared memory is too small ({} bytes) for the {} byte header",
+                data.len(),
+                RTSS_HEADER_MIN_LEN
+            ));
+        }
+
+        let read_u32 = |offset: usize| -> Result<u32, String> {
+            let bytes = data.get(offset..offset + 4).ok_or_else(|| {
+                format!(
+                    "RTSS header read out of bounds at offset {offset} \
+                     (mapped region is {} bytes)",
+                    data.len()
+                )
+            })?;
+            Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
         };
 
-        let app_entry_size = read_u32(8) as usize;
-        let app_arr_offset = read_u32(12) as usize;
-        let app_arr_size = (read_u32(16) as usize).min(MAX_APPS_TO_READ);
+        let app_entry_size = read_u32(8)? as usize;
+        let app_arr_offset = read_u32(12)? as usize;
+        let app_arr_size = (read_u32(16)? as usize).min(MAX_APPS_TO_READ);
+
+        if app_arr_offset < RTSS_HEADER_MIN_LEN {
+            return Err(format!(
+                "RTSS app array offset ({app_arr_offset}) points into the header \
+                 (must be >= {RTSS_HEADER_MIN_LEN}) -- refusing to read it"
+            ));
+        }
 
         if app_entry_size < ENTRY_PREFIX_SIZE {
             return Err(format!(
@@ -153,15 +208,32 @@ mod windows_impl {
         let mut apps = Vec::new();
 
         for i in 0..app_arr_size {
-            let entry_offset = app_arr_offset + i * app_entry_size;
-            let process_id = read_u32(entry_offset);
+            let stride = i.checked_mul(app_entry_size).ok_or_else(|| {
+                format!("RTSS app entry {i} stride overflows address space")
+            })?;
+            let entry_offset = app_arr_offset.checked_add(stride).ok_or_else(|| {
+                format!("RTSS app entry {i} offset overflows address space")
+            })?;
+            let entry_end = entry_offset.checked_add(ENTRY_PREFIX_SIZE).ok_or_else(|| {
+                format!("RTSS app entry {i} end offset overflows address space")
+            })?;
+
+            if entry_end > data.len() {
+                return Err(format!(
+                    "RTSS app entry {i} spans {entry_offset}..{entry_end}, outside the \
+                     mapped region ({} bytes) -- rejecting malformed header",
+                    data.len()
+                ));
+            }
+
+            let process_id = read_u32(entry_offset)?;
 
             if process_id == 0 {
                 continue; // empty slot
             }
 
-            let name_bytes =
-                std::slice::from_raw_parts(base.add(entry_offset + 4), APP_NAME_MAX_LEN);
+            let name_start = entry_offset + 4;
+            let name_bytes = &data[name_start..name_start + APP_NAME_MAX_LEN];
             let name_end = name_bytes
                 .iter()
                 .position(|&b| b == 0)
@@ -172,9 +244,8 @@ mod windows_impl {
             // offset within entry: processId(4) + name(260) + flags(4)
             // + time0(4) + time1(4) = 276, then frames, then frameTime
             let frames_offset = entry_offset + 4 + APP_NAME_MAX_LEN + 4 + 4 + 4;
-            let frames = read_u32(frames_offset);
-            let frame_time_offset = frames_offset + 4;
-            let frame_time_us = read_u32(frame_time_offset);
+            let frames = read_u32(frames_offset)?;
+            let frame_time_us = read_u32(frames_offset + 4)?;
 
             apps.push(RtssApp {
                 process_id,
@@ -205,7 +276,102 @@ mod windows_impl {
 
     #[cfg(test)]
     mod tests {
-        use super::process_name;
+        use super::{
+            parse, process_name, APP_NAME_MAX_LEN, ENTRY_PREFIX_SIZE, RTSS_SIGNATURE,
+        };
+
+        fn header(entry_size: u32, arr_offset: u32, count: u32, total_len: usize) -> Vec<u8> {
+            let mut data = vec![0u8; total_len];
+            data[0..4].copy_from_slice(RTSS_SIGNATURE);
+            data[8..12].copy_from_slice(&entry_size.to_le_bytes());
+            data[12..16].copy_from_slice(&arr_offset.to_le_bytes());
+            data[16..20].copy_from_slice(&count.to_le_bytes());
+            data
+        }
+
+        #[test]
+        fn rejects_buffer_too_small_for_signature() {
+            assert!(parse(&[0, 1, 2]).is_err());
+        }
+
+        #[test]
+        fn rejects_tiny_entry_size() {
+            let data = header(16, 20, 1, 4096);
+            assert!(parse(&data).is_err());
+        }
+
+        #[test]
+        fn rejects_entry_size_smaller_than_prefix() {
+            let data = header(ENTRY_PREFIX_SIZE as u32 - 1, 20, 1, 4096);
+            assert!(parse(&data).is_err());
+        }
+
+        #[test]
+        fn rejects_app_array_offset_inside_header() {
+            let data = header(ENTRY_PREFIX_SIZE as u32, 4, 1, 4096);
+            assert!(parse(&data).is_err());
+        }
+
+        #[test]
+        fn rejects_entry_range_outside_mapped_region() {
+            let data = header(ENTRY_PREFIX_SIZE as u32, 20, 1, 100);
+            assert!(parse(&data).is_err());
+        }
+
+        #[test]
+        fn rejects_stride_that_cannot_fit_in_region() {
+            let data = header(u32::MAX, 20, 2, 512);
+            assert!(parse(&data).is_err());
+        }
+
+        #[test]
+        fn rejects_oversized_count() {
+            let data = header(
+                ENTRY_PREFIX_SIZE as u32,
+                20,
+                u32::MAX,
+                20 + ENTRY_PREFIX_SIZE,
+            );
+            assert!(parse(&data).is_err());
+        }
+
+        #[test]
+        fn accepts_header_with_empty_slot() {
+            let data = header(
+                ENTRY_PREFIX_SIZE as u32,
+                20,
+                1,
+                20 + ENTRY_PREFIX_SIZE,
+            );
+            assert!(parse(&data).unwrap().is_empty());
+        }
+
+        #[test]
+        fn parses_valid_app_entry() {
+            let mut data = header(
+                ENTRY_PREFIX_SIZE as u32,
+                20,
+                1,
+                20 + ENTRY_PREFIX_SIZE,
+            );
+
+            let entry = 20usize;
+            data[entry..entry + 4].copy_from_slice(&4242u32.to_le_bytes());
+            let name = b"C:\\Games\\Game.exe";
+            data[entry + 4..entry + 4 + name.len()].copy_from_slice(name);
+
+            let frames_offset = entry + 4 + APP_NAME_MAX_LEN + 4 + 4 + 4;
+            data[frames_offset..frames_offset + 4].copy_from_slice(&7u32.to_le_bytes());
+            data[frames_offset + 4..frames_offset + 8]
+                .copy_from_slice(&16667u32.to_le_bytes());
+
+            let apps = parse(&data).unwrap();
+            assert_eq!(apps.len(), 1);
+            assert_eq!(apps[0].process_id, 4242);
+            assert_eq!(apps[0].name, "Game.exe");
+            assert_eq!(apps[0].frames, 7);
+            assert_eq!(apps[0].frame_time_us, 16667);
+        }
 
         #[test]
         fn strips_windows_backslash_path() {
