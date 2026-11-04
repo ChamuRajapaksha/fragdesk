@@ -1,28 +1,44 @@
 use crate::fragments::{Fragment, FragmentPayload, FRAGMENT_FORMAT_VERSION}; 
 use crate::database::{init_database, insert_clipboard_item, get_clipboard_history, ClipboardItem, delete_clipboard_item, toggle_pin_item};
 use arboard::Clipboard;
-use std::sync::{Arc, Mutex};
-use std::thread;
+use serde::Serialize;
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 pub struct ClipboardMonitor {
     pub is_running: Arc<Mutex<bool>>,
+    /// Wakes the worker immediately on stop instead of letting it finish a
+    /// 500 ms sleep first.
+    stop_signal: Arc<Condvar>,
     pub last_content: Arc<Mutex<String>>,
     /// Why the worker last stopped unexpectedly, if it did. Surfaced by the
     /// status query so the UI can explain a monitor that looks "off" after
     /// the user just started it.
     pub last_error: Arc<Mutex<Option<String>>>,
+    pub last_sample_at: Arc<Mutex<Option<i64>>>,
+    worker: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl ClipboardMonitor {
     pub fn new() -> Self {
         Self {
             is_running: Arc::new(Mutex::new(false)),
+            stop_signal: Arc::new(Condvar::new()),
             last_content: Arc::new(Mutex::new(String::new())),
             last_error: Arc::new(Mutex::new(None)),
+            last_sample_at: Arc::new(Mutex::new(None)),
+            worker: Mutex::new(None),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ClipboardMonitorStatus {
+    pub running: bool,
+    pub last_error: Option<String>,
+    pub last_sample_at: Option<i64>,
 }
 
 #[tauri::command]
@@ -30,21 +46,30 @@ pub fn start_clipboard_monitor(
     app_handle: AppHandle,
     state: tauri::State<'_, ClipboardMonitor>,
 ) -> Result<String, String> {
-    let mut is_running = state.is_running.lock().unwrap();
-    
-    if *is_running {
+    let mut worker = state.worker.lock().unwrap();
+
+    if *state.is_running.lock().unwrap() {
         return Ok("Already running".to_string());
     }
-    
-    *is_running = true;
-    
+
+    // A previous worker should already be joined by `stop`, but if one is
+    // still winding down, wait for it before spawning a replacement so two
+    // workers can never poll (and insert) simultaneously.
+    if let Some(handle) = worker.take() {
+        let _ = handle.join();
+    }
+
+    *state.is_running.lock().unwrap() = true;
+    *state.last_error.lock().unwrap() = None;
+    *state.last_sample_at.lock().unwrap() = None;
+
     let is_running_clone = state.is_running.clone();
+    let stop_signal = state.stop_signal.clone();
     let last_content_clone = state.last_content.clone();
     let last_error_clone = state.last_error.clone();
+    let last_sample_at_clone = state.last_sample_at.clone();
 
-    *state.last_error.lock().unwrap() = None;
-
-    thread::spawn(move || {
+    let handle = thread::spawn(move || {
         let mut clipboard = match Clipboard::new() {
             Ok(clipboard) => clipboard,
             Err(err) => {
@@ -56,16 +81,25 @@ pub fn start_clipboard_monitor(
         };
 
         loop {
-            // Check if we should stop
+            // Wait for the poll interval, but wake immediately if stop is
+            // requested instead of sleeping through the whole 500 ms.
             {
                 let running = is_running_clone.lock().unwrap();
                 if !*running {
                     break;
                 }
+                let (running, _) = stop_signal
+                    .wait_timeout(running, Duration::from_millis(500))
+                    .unwrap();
+                if !*running {
+                    break;
+                }
             }
-            
+
             // Check clipboard
             if let Ok(content) = clipboard.get_text() {
+                *last_sample_at_clone.lock().unwrap() = Some(chrono::Utc::now().timestamp());
+
                 let mut last = last_content_clone.lock().unwrap();
                 
                 if content != *last && !content.trim().is_empty() {
@@ -80,23 +114,41 @@ pub fn start_clipboard_monitor(
                     }
                 }
             }
-            
-            thread::sleep(Duration::from_millis(500));
         }
 
         // The worker is the authority on whether monitoring is actually
         // running -- never leave a stale `true` behind if it exits.
         *is_running_clone.lock().unwrap() = false;
     });
-    
+
+    *worker = Some(handle);
+
     Ok("Monitoring started".to_string())
 }
 
 #[tauri::command]
 pub fn stop_clipboard_monitor(state: tauri::State<'_, ClipboardMonitor>) -> Result<String, String> {
-    let mut is_running = state.is_running.lock().unwrap();
-    *is_running = false;
+    *state.is_running.lock().unwrap() = false;
+    state.stop_signal.notify_all();
+
+    // Join so a subsequent start cannot race with this worker. The condvar
+    // makes this near-immediate rather than up to 500 ms.
+    if let Some(handle) = state.worker.lock().unwrap().take() {
+        let _ = handle.join();
+    }
+
     Ok("Monitoring stopped".to_string())
+}
+
+#[tauri::command]
+pub fn get_clipboard_monitor_status(
+    state: tauri::State<'_, ClipboardMonitor>,
+) -> Result<ClipboardMonitorStatus, String> {
+    Ok(ClipboardMonitorStatus {
+        running: *state.is_running.lock().unwrap(),
+        last_error: state.last_error.lock().unwrap().clone(),
+        last_sample_at: *state.last_sample_at.lock().unwrap(),
+    })
 }
 
 #[tauri::command]

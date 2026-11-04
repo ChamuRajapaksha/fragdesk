@@ -7,7 +7,8 @@ mod rtss;
 
 use commands::clipboard::{
     copy_to_clipboard, delete_clipboard, get_clipboard_items, get_current_clipboard,
-    save_clipboard_text, start_clipboard_monitor, stop_clipboard_monitor, toggle_pin, export_clipboard_snippet_json, import_clipboard_snippet_json,
+    save_clipboard_text, start_clipboard_monitor, stop_clipboard_monitor,
+    get_clipboard_monitor_status, toggle_pin, export_clipboard_snippet_json, import_clipboard_snippet_json,
     ClipboardMonitor,
 };
 use commands::macros::{
@@ -140,6 +141,7 @@ pub fn run() {
             get_current_clipboard,
             start_clipboard_monitor,
             stop_clipboard_monitor,
+            get_clipboard_monitor_status,
             delete_clipboard,
             toggle_pin,
             copy_to_clipboard,
