@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Upload, Zap } from "lucide-react";
 import { extractErrorMessage, isSupabaseConfigured, supabase } from "../../../community/supabaseClient";
 import { useAuth } from "../../../community/useAuth";
+import { comboFromKeyboardEvent } from "../../../features/hotkeys";
 import MacroCard from "./MacroCard";
 import {
     formatDuration,
@@ -165,13 +166,8 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                 setCapturingHotkeyId(null);
                 return;
             }
-            if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return;
-
-            const mods: string[] = [];
-            if (e.ctrlKey || e.metaKey) mods.push("CommandOrControl");
-            if (e.altKey) mods.push("Alt");
-            if (e.shiftKey) mods.push("Shift");
-            const combo = [...mods, e.code].join("+");
+            const combo = comboFromKeyboardEvent(e);
+            if (!combo) return;
 
             void handleSetHotkey(targetId, combo);
         }
@@ -192,13 +188,8 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
                 setIsCapturingRecordHotkey(false);
                 return;
             }
-            if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return;
-
-            const mods: string[] = [];
-            if (e.ctrlKey || e.metaKey) mods.push("CommandOrControl");
-            if (e.altKey) mods.push("Alt");
-            if (e.shiftKey) mods.push("Shift");
-            const combo = [...mods, e.code].join("+");
+            const combo = comboFromKeyboardEvent(e);
+            if (!combo) return;
 
             invoke("set_record_hotkey", { hotkey: combo })
                 .then(() => {

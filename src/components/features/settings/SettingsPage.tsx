@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Settings } from 'lucide-react';
 import { applyPalette, PALETTES, type Palette } from '../../../themes';
+import { comboFromKeyboardEvent } from '../../../features/hotkeys';
 import { PageHeader, useToast } from '../../../components/ui';
 import type { NavId } from '../../../features/registry';
 import AccountSection from './AccountSection';
@@ -65,13 +66,8 @@ export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
         setIsCapturing(false);
         return;
       }
-      if (['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) return;
-
-      const mods: string[] = [];
-      if (e.ctrlKey || e.metaKey) mods.push('CommandOrControl');
-      if (e.altKey) mods.push('Alt');
-      if (e.shiftKey) mods.push('Shift');
-      const combo = [...mods, e.code].join('+');
+      const combo = comboFromKeyboardEvent(e);
+      if (!combo) return;
 
       setError(null);
       invoke('set_record_hotkey', { hotkey: combo })

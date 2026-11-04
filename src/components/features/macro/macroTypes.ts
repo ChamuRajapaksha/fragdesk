@@ -39,6 +39,4 @@ export function formatDate(unixSeconds: number): string {
     return new Date(unixSeconds * 1000).toLocaleString();
 }
 
-export function formatHotkey(hotkey: string): string {
-    return hotkey.replace("CommandOrControl", "Ctrl");
-}
+export { formatHotkey } from "../../../features/hotkeys";
