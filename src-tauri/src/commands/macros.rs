@@ -1,8 +1,9 @@
+use crate::commands::{with_db, with_db_handle};
 use crate::database::{
     delete_macro_item, get_macro_by_id, get_macro_id_by_hotkey, get_macros as db_get_macros,
-    get_setting, init_database, insert_macro, rename_macro_item, set_macro_hotkey_item,
+    get_setting, insert_macro, rename_macro_item, set_macro_hotkey_item,
     set_macro_source_item as db_set_macro_source, set_macro_tags as db_set_macro_tags, set_setting,
-    MacroEvent, MacroItem, MacroSummary,
+    DbState, MacroEvent, MacroItem, MacroSummary,
 };
 use crate::fragments::{Fragment, FragmentPayload, FRAGMENT_FORMAT_VERSION};
 use crate::hotkey::canonicalize_hotkey;
@@ -124,16 +125,14 @@ pub fn get_record_hotkey(state: tauri::State<'_, RecordHotkeyState>) -> String {
 pub fn set_record_hotkey(
     app_handle: AppHandle,
     state: tauri::State<'_, RecordHotkeyState>,
+    db: tauri::State<'_, DbState>,
     hotkey: String,
 ) -> Result<(), String> {
     // Reject malformed input before touching the OS keyboard state.
     let hotkey = canonicalize_hotkey(&hotkey)?;
-    let conn = init_database().map_err(|e| e.to_string())?;
 
-    if get_macro_id_by_hotkey(&conn, &hotkey)
-        .map_err(|e| e.to_string())?
-        .is_some()
-    {
+    let conflict = with_db(&db, |conn| get_macro_id_by_hotkey(conn, &hotkey))?;
+    if conflict.is_some() {
         return Err("That combo is already assigned to a macro's playback hotkey".to_string());
     }
 
@@ -149,9 +148,11 @@ pub fn set_record_hotkey(
         .register(hotkey.as_str())
         .map_err(|e| format!("Failed to register hotkey '{hotkey}': {e}"))?;
 
-    if let Err(err) = set_setting(&conn, RECORD_HOTKEY_SETTING_KEY, &hotkey) {
+    if let Err(err) = with_db(&db, |conn| {
+        set_setting(conn, RECORD_HOTKEY_SETTING_KEY, &hotkey)
+    }) {
         let _ = app_handle.global_shortcut().unregister(hotkey.as_str());
-        return Err(err.to_string());
+        return Err(err);
     }
 
     let _ = app_handle.global_shortcut().unregister(old.as_str());
@@ -220,6 +221,7 @@ pub fn stop_macro_recording(
 #[tauri::command]
 pub fn save_macro_recording(
     state: tauri::State<'_, MacroRecorder>,
+    db: tauri::State<'_, DbState>,
     name: String,
 ) -> Result<MacroSummary, String> {
     state.is_recording.store(false, Ordering::SeqCst); // safety net
@@ -234,8 +236,9 @@ pub fn save_macro_recording(
     let duration_ms: u64 = events.iter().map(event_delay_ms).sum();
     let id = Uuid::new_v4().to_string();
 
-    let conn = init_database().map_err(|e| e.to_string())?;
-    insert_macro(&conn, &id, &name, &events, duration_ms as i64).map_err(|e| e.to_string())?;
+    with_db(&db, |conn| {
+        insert_macro(conn, &id, &name, &events, duration_ms as i64)
+    })?;
 
     Ok(MacroSummary {
         id,
@@ -258,40 +261,46 @@ pub fn discard_macro_recording(state: tauri::State<'_, MacroRecorder>) -> Result
 }
 
 #[tauri::command]
-pub fn get_macros() -> Result<Vec<MacroSummary>, String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    db_get_macros(&conn).map_err(|e| e.to_string())
+pub fn get_macros(state: tauri::State<'_, DbState>) -> Result<Vec<MacroSummary>, String> {
+    with_db(&state, db_get_macros)
 }
 
 #[tauri::command]
 pub fn delete_macro(
     app_handle: AppHandle,
     registry: tauri::State<'_, HotkeyRegistry>,
+    db: tauri::State<'_, DbState>,
     id: String,
 ) -> Result<(), String> {
     // Unregister any hotkey this macro owned so it doesn't linger as a
     // dangling global shortcut pointing at a deleted macro.
-    let conn = init_database().map_err(|e| e.to_string())?;
-    if let Some(existing) = get_macro_by_id(&conn, &id).map_err(|e| e.to_string())? {
+    let existing = with_db(&db, |conn| get_macro_by_id(conn, &id))?;
+    if let Some(existing) = existing {
         if let Some(hotkey) = existing.hotkey {
             let _ = app_handle.global_shortcut().unregister(hotkey.as_str());
             registry.map.lock().unwrap().remove(&hotkey);
         }
     }
 
-    delete_macro_item(&conn, &id).map_err(|e| e.to_string())
+    with_db(&db, |conn| delete_macro_item(conn, &id))
 }
 
 #[tauri::command]
-pub fn rename_macro(id: String, name: String) -> Result<(), String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    rename_macro_item(&conn, &id, &name).map_err(|e| e.to_string())
+pub fn rename_macro(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+) -> Result<(), String> {
+    with_db(&state, |conn| rename_macro_item(conn, &id, &name))
 }
 
 #[tauri::command]
-pub fn set_macro_tags(id: String, tags: Vec<String>) -> Result<(), String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    db_set_macro_tags(&conn, &id, &tags).map_err(|e| e.to_string())
+pub fn set_macro_tags(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    tags: Vec<String>,
+) -> Result<(), String> {
+    with_db(&state, |conn| db_set_macro_tags(conn, &id, &tags))
 }
 
 /// Returns a pretty-printed JSON string for the given macro, wrapped in
@@ -299,10 +308,8 @@ pub fn set_macro_tags(id: String, tags: Vec<String>) -> Result<(), String> {
 /// triggers the actual file save via a plain browser Blob download -- no
 /// Tauri dialog/fs plugin needed for this.
 #[tauri::command]
-pub fn export_macro_json(id: String) -> Result<String, String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    let macro_item = get_macro_by_id(&conn, &id)
-        .map_err(|e| e.to_string())?
+pub fn export_macro_json(state: tauri::State<'_, DbState>, id: String) -> Result<String, String> {
+    let macro_item = with_db(&state, |conn| get_macro_by_id(conn, &id))?
         .ok_or_else(|| "Macro not found".to_string())?;
 
     let fragment = Fragment {
@@ -324,7 +331,11 @@ pub fn export_macro_json(id: String) -> Result<String, String> {
 /// macro -- even re-importing the same file twice just creates a second
 /// copy. Tags carry over from the fragment; hotkey never does.
 #[tauri::command]
-pub fn import_macro_json(json: String, source: Option<String>) -> Result<MacroSummary, String> {
+pub fn import_macro_json(
+    state: tauri::State<'_, DbState>,
+    json: String,
+    source: Option<String>,
+) -> Result<MacroSummary, String> {
     let fragment: Fragment =
         serde_json::from_str(&json).map_err(|e| format!("Couldn't parse fragment file: {e}"))?;
 
@@ -346,15 +357,16 @@ pub fn import_macro_json(json: String, source: Option<String>) -> Result<MacroSu
     let duration_ms: u64 = events.iter().map(event_delay_ms).sum();
     let id = Uuid::new_v4().to_string();
 
-    let conn = init_database().map_err(|e| e.to_string())?;
-    insert_macro(&conn, &id, &fragment.name, &events, duration_ms as i64)
-        .map_err(|e| e.to_string())?;
-    if !fragment.tags.is_empty() {
-        db_set_macro_tags(&conn, &id, &fragment.tags).map_err(|e| e.to_string())?;
-    }
-    if let Some(src) = &source {
-        db_set_macro_source(&conn, &id, Some(src.as_str())).map_err(|e| e.to_string())?;
-    }
+    with_db(&state, |conn| {
+        insert_macro(conn, &id, &fragment.name, &events, duration_ms as i64)?;
+        if !fragment.tags.is_empty() {
+            db_set_macro_tags(conn, &id, &fragment.tags)?;
+        }
+        if let Some(src) = &source {
+            db_set_macro_source(conn, &id, Some(src.as_str()))?;
+        }
+        Ok(())
+    })?;
 
     Ok(MacroSummary {
         id,
@@ -488,6 +500,7 @@ pub fn list_bundled_fragments(
 #[tauri::command]
 pub fn import_bundled_fragment(
     app_handle: AppHandle,
+    state: tauri::State<'_, DbState>,
     filename: String,
 ) -> Result<MacroSummary, String> {
     // Reject anything that looks like a path traversal attempt -- this is
@@ -501,7 +514,7 @@ pub fn import_bundled_fragment(
     let contents = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read bundled fragment '{filename}': {e}"))?;
 
-    import_macro_json(contents, Some("starter".to_string()))
+    import_macro_json(state, contents, Some("starter".to_string()))
 }
 
 /// Assigns (or clears, if `hotkey` is `None`) a global hotkey for a macro.
@@ -511,6 +524,7 @@ pub fn import_bundled_fragment(
 pub fn set_macro_hotkey(
     app_handle: AppHandle,
     registry: tauri::State<'_, HotkeyRegistry>,
+    db: tauri::State<'_, DbState>,
     id: String,
     hotkey: Option<String>,
 ) -> Result<(), String> {
@@ -520,14 +534,10 @@ pub fn set_macro_hotkey(
         None => None,
     };
 
-    let conn = init_database().map_err(|e| e.to_string())?;
-
-    let existing_hotkey = get_macro_by_id(&conn, &id)
-        .map_err(|e| e.to_string())?
-        .and_then(|m| m.hotkey);
+    let existing_hotkey = with_db(&db, |conn| get_macro_by_id(conn, &id))?.and_then(|m| m.hotkey);
 
     if let Some(new_key) = &hotkey {
-        if let Some(owner_id) = get_macro_id_by_hotkey(&conn, new_key).map_err(|e| e.to_string())? {
+        if let Some(owner_id) = with_db(&db, |conn| get_macro_id_by_hotkey(conn, new_key))? {
             if owner_id != id {
                 return Err("That hotkey is already assigned to another macro".to_string());
             }
@@ -547,11 +557,13 @@ pub fn set_macro_hotkey(
             .map_err(|e| format!("Failed to register hotkey '{new_key}': {e}"))?;
     }
 
-    if let Err(err) = set_macro_hotkey_item(&conn, &id, hotkey.as_deref()) {
+    if let Err(err) = with_db(&db, |conn| {
+        set_macro_hotkey_item(conn, &id, hotkey.as_deref())
+    }) {
         if let Some(new_key) = &hotkey {
             let _ = app_handle.global_shortcut().unregister(new_key.as_str());
         }
-        return Err(err.to_string());
+        return Err(err);
     }
 
     // Persistence succeeded -- now it's safe to release the old binding.
@@ -574,6 +586,7 @@ pub fn set_macro_hotkey(
 pub fn play_macro(
     app_handle: AppHandle,
     state: tauri::State<'_, MacroPlayback>,
+    db: tauri::State<'_, DbState>,
     id: String,
     speed: Option<f64>,
     repeat: Option<i32>,
@@ -582,9 +595,7 @@ pub fn play_macro(
         return Err("A macro is already playing".to_string());
     }
 
-    let conn = init_database().map_err(|e| e.to_string())?;
-    let macro_item = get_macro_by_id(&conn, &id)
-        .map_err(|e| e.to_string())?
+    let macro_item = with_db(&db, |conn| get_macro_by_id(conn, &id))?
         .ok_or_else(|| "Macro not found".to_string())?;
 
     start_playback(
@@ -635,15 +646,7 @@ pub fn handle_global_shortcut(app_handle: &AppHandle, shortcut_str: &str) {
         return;
     }
 
-    let conn = match init_database() {
-        Ok(c) => c,
-        Err(err) => {
-            eprintln!("[macros] hotkey trigger: failed to open db: {err}");
-            return;
-        }
-    };
-
-    let macro_item = match get_macro_by_id(&conn, &id) {
+    let macro_item = match with_db_handle(app_handle, |conn| get_macro_by_id(conn, &id)) {
         Ok(Some(m)) => m,
         Ok(None) => return,
         Err(err) => {
