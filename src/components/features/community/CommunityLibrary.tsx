@@ -38,7 +38,6 @@ export default function CommunityLibrary() {
         } else {
             setLoading(false);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Load which fragments this user has already reported, so the button
