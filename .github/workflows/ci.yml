@@ -53,6 +53,47 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
+  rust-check-windows:
+    name: Rust (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Most of the unsafe/native code (DXGI, PDH, RTSS shared memory,
+      # rdev input simulation) is Windows-only, so compile and test it
+      # on the platform it actually ships to as well as on Ubuntu.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --all-targets --locked
+
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --locked
+
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: cargo fmt
+        working-directory: src-tauri
+        run: cargo fmt --check
+
   frontend-build:
     name: Frontend (npm build)
     runs-on: ubuntu-latest

@@ -396,7 +396,7 @@ mod windows_impl {
 
         #[test]
         fn read_wide_cstring_stops_at_max_len_when_unterminated() {
-            let buf = vec![b'A' as u16; 8];
+            let buf = [b'A' as u16; 8];
             let value = unsafe { read_wide_cstring(buf.as_ptr(), 8) };
             assert_eq!(value.len(), 8);
         }
