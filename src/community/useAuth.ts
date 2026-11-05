@@ -10,31 +10,31 @@ import { supabase } from "./supabaseClient";
  * button, Community Library's delete buttons, etc).
  */
 export function useAuth() {
-    const [user, setUser] = useState<User | null>(null);
-    const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        if (!supabase) {
-            setLoading(false);
-            return;
-        }
-
-        supabase.auth.getSession().then(({ data }) => {
-            setUser(data.session?.user ?? null);
-            setLoading(false);
-        });
-
-        const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
-            setUser(session?.user ?? null);
-        });
-
-        return () => subscription.subscription.unsubscribe();
-    }, []);
-
-    async function signOut() {
-        if (!supabase) return;
-        await supabase.auth.signOut();
+  useEffect(() => {
+    if (!supabase) {
+      setLoading(false);
+      return;
     }
 
-    return { user, loading, signOut };
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
+      setLoading(false);
+    });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.subscription.unsubscribe();
+  }, []);
+
+  async function signOut() {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+  }
+
+  return { user, loading, signOut };
 }

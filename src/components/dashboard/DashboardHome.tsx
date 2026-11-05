@@ -1,15 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
-import { Activity, ArrowRight, Clipboard, Command, Save, Sparkles, X, Zap, type LucideIcon } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
-import { Area, AreaChart, ResponsiveContainer } from 'recharts';
-import { Badge, Button, StatCard, useToast } from '../ui';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
+import {
+  Activity,
+  ArrowRight,
+  Clipboard,
+  Command,
+  Save,
+  Sparkles,
+  X,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { Area, AreaChart, ResponsiveContainer } from "recharts";
+import { Badge, Button, StatCard, useToast } from "../ui";
 import {
   FEATURES_BY_GROUP,
   featureMode,
   type FeatureGroup,
   type NavId,
-} from '../../features/registry';
+} from "../../features/registry";
 
 interface DashboardHomeProps {
   setActiveTab: (tab: NavId) => void;
@@ -18,16 +28,16 @@ interface DashboardHomeProps {
 // Accent colours are a pure-presentation concern, so they live here rather
 // than in the registry (which only describes what a feature is).
 const ACCENTS: Record<string, { color: string; bgColor: string }> = {
-  clipboard: { color: 'text-frag-primary', bgColor: 'bg-frag-primary/10' },
-  macros: { color: 'text-frag-accent', bgColor: 'bg-frag-accent/10' },
-  monitor: { color: 'text-frag-success', bgColor: 'bg-frag-success/10' },
-  fragments: { color: 'text-frag-primary', bgColor: 'bg-frag-primary/10' },
-  community: { color: 'text-frag-accent', bgColor: 'bg-frag-accent/10' },
+  clipboard: { color: "text-frag-primary", bgColor: "bg-frag-primary/10" },
+  macros: { color: "text-frag-accent", bgColor: "bg-frag-accent/10" },
+  monitor: { color: "text-frag-success", bgColor: "bg-frag-success/10" },
+  fragments: { color: "text-frag-primary", bgColor: "bg-frag-primary/10" },
+  community: { color: "text-frag-accent", bgColor: "bg-frag-accent/10" },
 };
 
 // Dashboard sections come from the registry, limited to groups people should
 // reach from home (excludes the overview + app groups).
-const FEATURE_GROUPS = new Set<FeatureGroup>(['tools', 'system', 'community']);
+const FEATURE_GROUPS = new Set<FeatureGroup>(["tools", "system", "community"]);
 
 interface DashboardStats {
   clipCount: number | null;
@@ -38,25 +48,15 @@ interface DashboardStats {
 // The theme stores colours as RGB triplets ("0 217 255"); resolve the current
 // value to a concrete rgb() so chart strokes track the active palette.
 function resolveColor(variable: string): string {
-  const raw = getComputedStyle(document.documentElement)
-    .getPropertyValue(variable)
-    .trim();
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(variable).trim();
   const parts = raw.split(/\s+/).map((p) => Number(p));
   if (parts.length === 3 && parts.every((p) => !Number.isNaN(p))) {
-    return `rgb(${parts.join(', ')})`;
+    return `rgb(${parts.join(", ")})`;
   }
-  return raw || 'currentColor';
+  return raw || "currentColor";
 }
 
-function Sparkline({
-  id,
-  color,
-  data,
-}: {
-  id: string;
-  color: string;
-  data: { v: number }[];
-}) {
+function Sparkline({ id, color, data }: { id: string; color: string; data: { v: number }[] }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <AreaChart data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
@@ -96,11 +96,11 @@ const CARD_VARIANTS = {
   show: (i: number) => ({
     opacity: 1,
     y: 0,
-    transition: { type: 'spring' as const, stiffness: 260, damping: 24, delay: i * 0.05 },
+    transition: { type: "spring" as const, stiffness: 260, damping: 24, delay: i * 0.05 },
   }),
 };
 
-const SPOTLIGHT_DISMISS_KEY = 'fragdesk:spotlight-dismissed';
+const SPOTLIGHT_DISMISS_KEY = "fragdesk:spotlight-dismissed";
 
 function StatCardSkeleton() {
   return (
@@ -131,13 +131,14 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
   );
 
   const newFeatures = useMemo(
-    () => sections.flatMap((section) => section.features).filter((f) => featureMode(f.id) === 'new'),
+    () =>
+      sections.flatMap((section) => section.features).filter((f) => featureMode(f.id) === "new"),
     [sections],
   );
 
   const [dismissed, setDismissed] = useState<string[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem(SPOTLIGHT_DISMISS_KEY) ?? '[]');
+      return JSON.parse(localStorage.getItem(SPOTLIGHT_DISMISS_KEY) ?? "[]");
     } catch {
       return [];
     }
@@ -165,20 +166,20 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
       if (pendingRef.current >= 3) setStatsLoading(false);
     };
 
-    invoke<{ id: number }[]>('get_clipboard_items', { limit: 1000 })
+    invoke<{ id: number }[]>("get_clipboard_items", { limit: 1000 })
       .then((items) => setStats((s) => ({ ...s, clipCount: items.length })))
       .catch(() => setStats((s) => ({ ...s, clipCount: null })))
       .finally(settle);
 
-    invoke<{ id: string }[]>('get_macros')
+    invoke<{ id: string }[]>("get_macros")
       .then((macros) => setStats((s) => ({ ...s, macroCount: macros.length })))
       .catch(() => setStats((s) => ({ ...s, macroCount: null })))
       .finally(settle);
 
-    invoke<Record<string, unknown>>('get_system_stats')
+    invoke<Record<string, unknown>>("get_system_stats")
       .then((data) => {
         const cpu = data.cpu_usage ?? data.cpu_usage_percent ?? data.cpu;
-        setStats((s) => ({ ...s, cpuUsage: typeof cpu === 'number' ? cpu : null }));
+        setStats((s) => ({ ...s, cpuUsage: typeof cpu === "number" ? cpu : null }));
       })
       .catch(() => setStats((s) => ({ ...s, cpuUsage: null })))
       .finally(settle);
@@ -192,34 +193,34 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
   const macroSeries = useMemo(() => makeSeries(23, macros), [macros]);
   const cpuSeries = useMemo(() => makeSeries(41, cpu), [cpu]);
 
-  const clipColor = useMemo(() => resolveColor('--frag-primary'), [stats]);
-  const macroColor = useMemo(() => resolveColor('--frag-accent'), [stats]);
-  const cpuColor = useMemo(() => resolveColor('--frag-success'), [stats]);
+  const clipColor = useMemo(() => resolveColor("--frag-primary"), [stats]);
+  const macroColor = useMemo(() => resolveColor("--frag-accent"), [stats]);
+  const cpuColor = useMemo(() => resolveColor("--frag-success"), [stats]);
 
-  const today = new Intl.DateTimeFormat('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
+  const today = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
   }).format(new Date());
 
   const handleStartRecording = useCallback(async () => {
     try {
-      await invoke('start_macro_recording');
-      toast('Recording started — stop it inside the Macros page.', 'success');
-      setActiveTab('macros');
+      await invoke("start_macro_recording");
+      toast("Recording started — stop it inside the Macros page.", "success");
+      setActiveTab("macros");
     } catch {
-      toast('Could not start recording.', 'error');
+      toast("Could not start recording.", "error");
     }
   }, [setActiveTab, toast]);
 
   const handleSaveCurrentClip = useCallback(async () => {
     try {
-      const text = await invoke<string>('get_current_clipboard');
-      await invoke('save_clipboard_text', { text });
+      const text = await invoke<string>("get_current_clipboard");
+      await invoke("save_clipboard_text", { text });
       setStats((s) => ({ ...s, clipCount: (s.clipCount ?? 0) + 1 }));
-      toast('Current clipboard saved to history.', 'success');
+      toast("Current clipboard saved to history.", "success");
     } catch {
-      toast('Could not read the current clipboard.', 'error');
+      toast("Could not read the current clipboard.", "error");
     }
   }, [toast]);
 
@@ -272,32 +273,26 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
             <StatCard
               icon={Clipboard as LucideIcon}
               label="Total Clips"
-              value={stats.clipCount ?? '--'}
+              value={stats.clipCount ?? "--"}
               accent="text-frag-primary"
-              onClick={() => navigate('clipboard')}
-              sparkline={
-                <Sparkline id="clip" color={clipColor} data={clipSeries} />
-              }
+              onClick={() => navigate("clipboard")}
+              sparkline={<Sparkline id="clip" color={clipColor} data={clipSeries} />}
             />
             <StatCard
               icon={Zap}
               label="Saved Macros"
-              value={stats.macroCount ?? '--'}
+              value={stats.macroCount ?? "--"}
               accent="text-frag-accent"
-              onClick={() => navigate('macros')}
-              sparkline={
-                <Sparkline id="macro" color={macroColor} data={macroSeries} />
-              }
+              onClick={() => navigate("macros")}
+              sparkline={<Sparkline id="macro" color={macroColor} data={macroSeries} />}
             />
             <StatCard
               icon={Activity}
               label="CPU Usage"
-              value={stats.cpuUsage !== null ? `${stats.cpuUsage.toFixed(0)}%` : '--'}
+              value={stats.cpuUsage !== null ? `${stats.cpuUsage.toFixed(0)}%` : "--"}
               accent="text-frag-success"
-              onClick={() => navigate('monitor')}
-              sparkline={
-                <Sparkline id="cpu" color={cpuColor} data={cpuSeries} />
-              }
+              onClick={() => navigate("monitor")}
+              sparkline={<Sparkline id="cpu" color={cpuColor} data={cpuSeries} />}
             />
           </>
         )}
@@ -308,11 +303,10 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
         <div className="mb-8 space-y-3">
           {spotlight.map((feature, index) => {
             const Icon = feature.icon;
-            const accent =
-              ACCENTS[feature.id] ?? {
-                color: 'text-frag-primary',
-                bgColor: 'bg-frag-primary/10',
-              };
+            const accent = ACCENTS[feature.id] ?? {
+              color: "text-frag-primary",
+              bgColor: "bg-frag-primary/10",
+            };
             return (
               <motion.div
                 key={feature.id}
@@ -330,9 +324,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
                     <Sparkles size={13} />
                     New feature
                   </p>
-                  <h3 className="text-lg font-semibold text-frag-text mt-0.5">
-                    {feature.label}
-                  </h3>
+                  <h3 className="text-lg font-semibold text-frag-text mt-0.5">{feature.label}</h3>
                   <p className="text-frag-muted text-sm mt-0.5 line-clamp-2">
                     {feature.description}
                   </p>
@@ -371,16 +363,15 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {section.features.map((feature, index) => {
                 const Icon = feature.icon;
-                const accent =
-                  ACCENTS[feature.id] ?? {
-                    color: 'text-frag-primary',
-                    bgColor: 'bg-frag-primary/10',
-                  };
+                const accent = ACCENTS[feature.id] ?? {
+                  color: "text-frag-primary",
+                  bgColor: "bg-frag-primary/10",
+                };
                 const mode = featureMode(feature.id);
                 const modeBadge =
-                  mode === 'coming-soon' ? (
+                  mode === "coming-soon" ? (
                     <Badge variant="muted">Coming soon</Badge>
-                  ) : mode === 'new' ? (
+                  ) : mode === "new" ? (
                     <Badge variant="accent">New</Badge>
                   ) : (
                     <Badge variant="success">Available</Badge>
@@ -411,7 +402,10 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {modeBadge}
-                      <ArrowRight className="text-frag-muted group-hover:text-frag-primary transition-colors shrink-0" size={18} />
+                      <ArrowRight
+                        className="text-frag-muted group-hover:text-frag-primary transition-colors shrink-0"
+                        size={18}
+                      />
                     </div>
                   </motion.button>
                 );

@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { Settings } from 'lucide-react';
-import { applyPalette, PALETTES, type Palette } from '../../../themes';
-import { comboFromKeyboardEvent } from '../../../features/hotkeys';
-import { PageHeader, useToast } from '../../../components/ui';
-import type { NavId } from '../../../features/registry';
-import AccountSection from './AccountSection';
+import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Settings } from "lucide-react";
+import { applyPalette, PALETTES, type Palette } from "../../../themes";
+import { comboFromKeyboardEvent } from "../../../features/hotkeys";
+import { PageHeader, useToast } from "../../../components/ui";
+import type { NavId } from "../../../features/registry";
+import AccountSection from "./AccountSection";
 
 interface SettingsPageProps {
   setActiveTab?: (tab: NavId) => void;
@@ -13,21 +13,21 @@ interface SettingsPageProps {
 
 export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
   const { toast } = useToast();
-  const [recordHotkey, setRecordHotkey] = useState<string>('F9');
+  const [recordHotkey, setRecordHotkey] = useState<string>("F9");
   const [isCapturing, setIsCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [paletteId, setPaletteId] = useState<string>('neon');
+  const [paletteId, setPaletteId] = useState<string>("neon");
   const [justSaved, setJustSaved] = useState(false);
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
-    invoke<string>('get_record_hotkey')
+    invoke<string>("get_record_hotkey")
       .then(setRecordHotkey)
       .catch(() => {});
   }, []);
 
   useEffect(() => {
-    invoke<string>('get_ui_theme')
+    invoke<string>("get_ui_theme")
       .then(setPaletteId)
       .catch(() => {});
   }, []);
@@ -36,7 +36,7 @@ export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
     () => () => {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     },
-    []
+    [],
   );
 
   function selectPalette(palette: Palette) {
@@ -45,14 +45,14 @@ export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
     setJustSaved(true);
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => setJustSaved(false), 2000);
-    invoke('set_ui_theme', { theme: palette.id })
-      .then(() => toast(`"${palette.name}" palette applied`, 'success'))
-      .catch((err) => toast(String(err), 'error'));
+    invoke("set_ui_theme", { theme: palette.id })
+      .then(() => toast(`"${palette.name}" palette applied`, "success"))
+      .catch((err) => toast(String(err), "error"));
   }
 
   function handleAccountDeleted() {
-    setPaletteId('neon');
-    setRecordHotkey('F9');
+    setPaletteId("neon");
+    setRecordHotkey("F9");
   }
 
   useEffect(() => {
@@ -62,7 +62,7 @@ export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
       e.preventDefault();
       e.stopPropagation();
 
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         setIsCapturing(false);
         return;
       }
@@ -70,20 +70,20 @@ export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
       if (!combo) return;
 
       setError(null);
-      invoke('set_record_hotkey', { hotkey: combo })
+      invoke("set_record_hotkey", { hotkey: combo })
         .then(() => {
           setRecordHotkey(combo);
-          toast(`Recording hotkey set to ${combo}`, 'success');
+          toast(`Recording hotkey set to ${combo}`, "success");
         })
         .catch((err) => {
           setError(String(err));
-          toast(String(err), 'error');
+          toast(String(err), "error");
         })
         .finally(() => setIsCapturing(false));
     }
 
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => document.removeEventListener('keydown', onKeyDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [isCapturing]);
 
   return (
@@ -108,9 +108,9 @@ export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
         <section className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 space-y-3">
           <h2 className="text-lg font-semibold text-frag-text">Macro Recording</h2>
           <p className="text-sm text-frag-muted break-words">
-            This hotkey starts and stops macro recording from anywhere, even while
-            FragDesk isn't focused — without it, you'd have to click a button
-            on-screen, which gets captured as part of the recording itself.
+            This hotkey starts and stops macro recording from anywhere, even while FragDesk isn't
+            focused — without it, you'd have to click a button on-screen, which gets captured as
+            part of the recording itself.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm text-frag-muted">Record toggle:</span>
@@ -152,11 +152,11 @@ export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
                   key={palette.id}
                   onClick={() => selectPalette(palette)}
                   aria-pressed={selected}
-                  aria-label={`${palette.name} palette${selected ? ', currently selected' : ''}`}
+                  aria-label={`${palette.name} palette${selected ? ", currently selected" : ""}`}
                   className={`text-left rounded-lg p-3 border focus-visible:ring-2 focus-visible:ring-frag-primary/60 focus-visible:outline-none transition-colors ${
                     selected
-                      ? 'border-frag-primary ring-1 ring-frag-primary'
-                      : 'border-frag-border hover:border-frag-primary/60'
+                      ? "border-frag-primary ring-1 ring-frag-primary"
+                      : "border-frag-border hover:border-frag-primary/60"
                   }`}
                 >
                   <div className="flex gap-1.5 mb-2">
@@ -181,7 +181,7 @@ export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
                   </div>
                   <span
                     className={`text-sm font-medium ${
-                      selected ? 'text-frag-primary' : 'text-frag-text'
+                      selected ? "text-frag-primary" : "text-frag-text"
                     }`}
                   >
                     {palette.name}
@@ -200,8 +200,8 @@ export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
           <h2 className="text-lg font-semibold text-frag-text">About</h2>
           <div className="text-sm text-frag-muted space-y-1">
             <p className="break-words">
-              <span className="text-frag-text font-medium">FragDesk</span> — a gaming
-              companion, productivity utility, and community fragment aggregator.
+              <span className="text-frag-text font-medium">FragDesk</span> — a gaming companion,
+              productivity utility, and community fragment aggregator.
             </p>
             <p className="break-words">Version 0.1.0 · Alpha Build</p>
           </div>

@@ -1,7 +1,7 @@
-import { motion } from 'framer-motion';
-import { useAuth } from '../../community/useAuth';
-import { isSupabaseConfigured } from '../../community/supabaseClient';
-import { FEATURES_BY_GROUP, featureMode, type NavId } from '../../features/registry';
+import { motion } from "framer-motion";
+import { useAuth } from "../../community/useAuth";
+import { isSupabaseConfigured } from "../../community/supabaseClient";
+import { FEATURES_BY_GROUP, featureMode, type NavId } from "../../features/registry";
 
 interface SidebarProps {
   activeTab: NavId;
@@ -32,7 +32,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
               {section.features.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeTab === item.id;
-                const isNew = featureMode(item.id) === 'new';
+                const isNew = featureMode(item.id) === "new";
 
                 return (
                   <motion.button
@@ -41,9 +41,10 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
                     className={`
                       w-full flex items-center gap-3 px-4 py-3 rounded-lg
                       transition-all duration-200 relative
-                      ${isActive
-                        ? 'text-frag-primary bg-frag-primary/10'
-                        : 'text-frag-muted hover:text-frag-text hover:bg-frag-bg'
+                      ${
+                        isActive
+                          ? "text-frag-primary bg-frag-primary/10"
+                          : "text-frag-muted hover:text-frag-text hover:bg-frag-bg"
                       }
                     `}
                     whileHover={{ x: 4 }}
@@ -53,7 +54,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
                       <motion.div
                         layoutId="activeTab"
                         className="absolute left-0 top-0 bottom-0 w-1 bg-frag-primary rounded-r"
-                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                        transition={{ type: "spring", stiffness: 500, damping: 30 }}
                       />
                     )}
                     <Icon size={20} className="shrink-0" />
@@ -74,7 +75,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
       {/* Auth status */}
       {isSupabaseConfigured && !authLoading && (
         <button
-          onClick={() => setActiveTab('community')}
+          onClick={() => setActiveTab("community")}
           className="w-[calc(100%-2rem)] mx-4 mb-2 px-3 py-2 rounded-lg bg-frag-bg hover:bg-frag-bg/70 border border-frag-border text-left transition-colors"
         >
           {user ? (

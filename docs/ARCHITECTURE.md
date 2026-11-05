@@ -134,6 +134,7 @@ fragdesk/
 ## 🗄️ Database Schema (SQLite)
 
 ### **clipboard_history** table
+
 ```sql
 CREATE TABLE clipboard_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,6 +155,7 @@ CREATE VIRTUAL TABLE clipboard_fts USING fts5(content, content_tokenize='porter'
 ```
 
 ### **macros** table
+
 ```sql
 CREATE TABLE macros (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,6 +173,7 @@ CREATE INDEX idx_hotkey ON macros(hotkey);
 ```
 
 ### **settings** table
+
 ```sql
 CREATE TABLE settings (
     key TEXT PRIMARY KEY,
@@ -184,6 +187,7 @@ CREATE TABLE settings (
 ## 🎯 Feature Ownership (3-Person Team)
 
 ### **Person 1: Clipboard Manager**
+
 - `src/components/features/clipboard/`
 - `src/stores/clipboardStore.ts`
 - `src-tauri/src/commands/clipboard.rs`
@@ -191,12 +195,14 @@ CREATE TABLE settings (
 - `src-tauri/src/database/clipboard_db.rs`
 
 ### **Person 2: System Monitor**
+
 - `src/components/features/monitor/`
 - `src/stores/monitorStore.ts`
 - `src-tauri/src/commands/monitor.rs`
 - `src-tauri/src/services/monitor_service.rs`
 
 ### **Person 3: Macro System**
+
 - `src/components/features/macros/`
 - `src/stores/macroStore.ts`
 - `src-tauri/src/commands/macros.rs`
@@ -204,6 +210,7 @@ CREATE TABLE settings (
 - `src-tauri/src/database/macro_db.rs`
 
 ### **Shared Responsibility:**
+
 - `src/components/ui/` - Everyone can contribute
 - `src/components/layout/` - Person 1 (after clipboard is done)
 - `src/components/features/settings/` - Person 2 (after monitor is done)
@@ -214,6 +221,7 @@ CREATE TABLE settings (
 ## 📋 Development Workflow
 
 ### **Branch Naming Convention**
+
 ```
 feature/clipboard-history
 feature/macro-recorder
@@ -223,6 +231,7 @@ refactor/database-schema
 ```
 
 ### **Commit Message Format**
+
 ```
 feat: Add clipboard history search
 fix: Resolve macro playback timing issue
@@ -231,22 +240,27 @@ docs: Update architecture guide
 ```
 
 ### **Pull Request Template**
+
 ```markdown
 ## What does this PR do?
+
 Brief description
 
 ## Type of change
+
 - [ ] New feature
 - [ ] Bug fix
 - [ ] Refactoring
 - [ ] Documentation
 
 ## Testing
+
 - [ ] Tested on Windows
 - [ ] No console errors
 - [ ] Existing features still work
 
 ## Screenshots (if UI changes)
+
 [Add screenshots]
 ```
 
@@ -255,6 +269,7 @@ Brief description
 ## 🔧 Tech Stack Details
 
 ### **Frontend**
+
 - **Framework:** React 18 + TypeScript
 - **State:** Zustand (lightweight, no boilerplate)
 - **Styling:** TailwindCSS + Framer Motion
@@ -262,6 +277,7 @@ Brief description
 - **Build:** Vite
 
 ### **Backend**
+
 - **Language:** Rust
 - **Framework:** Tauri 2.0
 - **Async:** Tokio
@@ -269,6 +285,7 @@ Brief description
 - **Input Handling:** rdev + enigo
 
 ### **Database**
+
 - **Engine:** SQLite 3
 - **ORM:** Direct SQL (via rusqlite)
 - **Migrations:** Manual SQL files in `src-tauri/migrations/`
@@ -278,6 +295,7 @@ Brief description
 ## 🚀 Getting Started (For Team Members)
 
 ### **Initial Setup**
+
 ```bash
 git clone https://github.com/ChamuRajapaksha/fragdesk.git
 cd fragdesk
@@ -286,6 +304,7 @@ npm run tauri dev
 ```
 
 ### **Before Starting Work**
+
 ```bash
 git checkout main
 git pull origin main
@@ -293,6 +312,7 @@ git checkout -b feature/your-feature-name
 ```
 
 ### **Daily Workflow**
+
 ```bash
 # Make changes...
 git add .
@@ -306,6 +326,7 @@ git push origin feature/your-feature-name
 ## 📊 Milestones
 
 ### **v0.1.0 - MVP (4-6 weeks)**
+
 - ✅ Project setup
 - [ ] Basic UI with navigation
 - [ ] Clipboard manager (basic)
@@ -313,6 +334,7 @@ git push origin feature/your-feature-name
 - [ ] Settings page
 
 ### **v0.2.0 - Core Features (8-10 weeks)**
+
 - [ ] Clipboard with search
 - [ ] Macro recorder
 - [ ] Macro playback
@@ -320,6 +342,7 @@ git push origin feature/your-feature-name
 - [ ] Hotkey system
 
 ### **v0.3.0 - Polish (12-14 weeks)**
+
 - [ ] Advanced macro editing
 - [ ] Export/import features
 - [ ] Auto-update system
@@ -331,6 +354,7 @@ git push origin feature/your-feature-name
 ## 🎨 UI Design System
 
 ### **Colors**
+
 The `frag.*` Tailwind tokens resolve to CSS custom properties at runtime, so
 the palette can be switched live. `src/App.css` defines the `:root` defaults
 (space-separated RGB triplets), `src/themes.ts` holds the curated palettes
@@ -363,6 +387,7 @@ colors: {
 ```
 
 ### **Component Philosophy**
+
 - Dark theme by default
 - Smooth animations (Framer Motion)
 - Gaming aesthetic (neon accents, glows)
@@ -374,11 +399,13 @@ colors: {
 ## 📞 Communication
 
 ### **Daily Standup (5 min)**
+
 - What did you work on yesterday?
 - What are you working on today?
 - Any blockers?
 
 ### **Code Review Checklist**
+
 - [ ] Code follows TypeScript/Rust conventions
 - [ ] No console errors
 - [ ] Commented complex logic
@@ -386,6 +413,7 @@ colors: {
 - [ ] No merge conflicts
 
 ### **When to Ask for Help**
+
 - Stuck for 30+ minutes → Ask in Discord
 - Breaking changes → Notify team first
 - Unsure about architecture → Discuss before implementing
@@ -403,6 +431,7 @@ colors: {
 ---
 
 This architecture is designed to:
+
 - ✅ Scale as features are added
 - ✅ Allow 3 people to work simultaneously without conflicts
 - ✅ Keep code organized and maintainable

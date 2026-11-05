@@ -1,27 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { AnimatePresence, motion } from 'framer-motion';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { AnimatePresence, motion } from "framer-motion";
+import { Clipboard, Pin, Search, PlayCircle, StopCircle, X } from "lucide-react";
+import { EmptyState, ErrorBanner, LoadingState, PageHeader, StatCard, useToast } from "../../ui";
 import {
-  Clipboard,
-  Pin,
-  Search,
-  PlayCircle,
-  StopCircle,
-  X,
-} from 'lucide-react';
-import {
-  EmptyState,
-  ErrorBanner,
-  LoadingState,
-  PageHeader,
-  StatCard,
-  useToast,
-} from '../../ui';
-import { extractErrorMessage, isSupabaseConfigured, supabase } from '../../../community/supabaseClient';
-import { useAuth } from '../../../community/useAuth';
-import type { NavId } from '../../../features/registry';
-import ClipboardItemRow, { type ClipboardItem } from './ClipboardItemRow';
+  extractErrorMessage,
+  isSupabaseConfigured,
+  supabase,
+} from "../../../community/supabaseClient";
+import { useAuth } from "../../../community/useAuth";
+import type { NavId } from "../../../features/registry";
+import ClipboardItemRow, { type ClipboardItem } from "./ClipboardItemRow";
 
 interface ClipboardHistoryProps {
   setActiveTab: (tab: NavId) => void;
@@ -37,7 +27,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
   const { user } = useAuth();
   const { toast } = useToast();
   const [items, setItems] = useState<ClipboardItem[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +35,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
   // Sharing: which item is currently showing the "name it" prompt, plus
   // the draft name, plus which item id is mid-submit / already shared.
   const [sharingItemId, setSharingItemId] = useState<number | null>(null);
-  const [shareNameDraft, setShareNameDraft] = useState('');
+  const [shareNameDraft, setShareNameDraft] = useState("");
   const [submittingShareId, setSubmittingShareId] = useState<number | null>(null);
   const [sharedIds, setSharedIds] = useState<Set<number>>(new Set());
 
@@ -61,7 +51,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
 
   const refreshMonitorStatus = useCallback(async () => {
     try {
-      const status = await invoke<ClipboardMonitorStatus>('get_clipboard_monitor_status');
+      const status = await invoke<ClipboardMonitorStatus>("get_clipboard_monitor_status");
       setIsMonitoring(status.running);
       setError(status.last_error ?? null);
     } catch (error) {
@@ -73,12 +63,12 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
     loadClipboardHistory();
     refreshMonitorStatus();
 
-    const unlisten = listen('clipboard-updated', () => {
+    const unlisten = listen("clipboard-updated", () => {
       loadClipboardHistory();
     });
 
     return () => {
-      unlisten.then(fn => fn());
+      unlisten.then((fn) => fn());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -93,7 +83,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
 
   const loadClipboardHistory = useCallback(async () => {
     try {
-      const result = await invoke<ClipboardItem[]>('get_clipboard_items', { limit: 100 });
+      const result = await invoke<ClipboardItem[]>("get_clipboard_items", { limit: 100 });
       const sorted = result.sort((a, b) => {
         if (a.is_pinned && !b.is_pinned) return -1;
         if (!a.is_pinned && b.is_pinned) return 1;
@@ -111,19 +101,19 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
   const toggleMonitoring = useCallback(async () => {
     try {
       if (isMonitoring) {
-        await invoke('stop_clipboard_monitor');
+        await invoke("stop_clipboard_monitor");
         await refreshMonitorStatus();
-        toast('Clipboard monitoring stopped.', 'info');
+        toast("Clipboard monitoring stopped.", "info");
       } else {
-        await invoke('start_clipboard_monitor');
-        const status = await invoke<ClipboardMonitorStatus>('get_clipboard_monitor_status');
+        await invoke("start_clipboard_monitor");
+        const status = await invoke<ClipboardMonitorStatus>("get_clipboard_monitor_status");
         setIsMonitoring(status.running);
         if (status.last_error) {
           setError(status.last_error);
-          toast('Clipboard monitoring could not start.', 'error');
+          toast("Clipboard monitoring could not start.", "error");
         } else {
           setError(null);
-          toast('Clipboard monitoring started.', 'success');
+          toast("Clipboard monitoring started.", "success");
         }
       }
     } catch (error) {
@@ -133,42 +123,51 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
 
   const saveCurrentClipboard = useCallback(async () => {
     try {
-      const text = await invoke<string>('get_current_clipboard');
-      await invoke('save_clipboard_text', { text });
+      const text = await invoke<string>("get_current_clipboard");
+      await invoke("save_clipboard_text", { text });
       await loadClipboardHistory();
-      toast('Current clipboard saved to history.', 'success');
+      toast("Current clipboard saved to history.", "success");
     } catch (error) {
       setError(extractErrorMessage(error));
     }
   }, [loadClipboardHistory, toast]);
 
-  const copyToClipboard = useCallback(async (text: string) => {
-    try {
-      await invoke('copy_to_clipboard', { text });
-      toast('Copied to clipboard.', 'success');
-    } catch (error) {
-      setError(extractErrorMessage(error));
-    }
-  }, [toast]);
+  const copyToClipboard = useCallback(
+    async (text: string) => {
+      try {
+        await invoke("copy_to_clipboard", { text });
+        toast("Copied to clipboard.", "success");
+      } catch (error) {
+        setError(extractErrorMessage(error));
+      }
+    },
+    [toast],
+  );
 
-  const deleteItem = useCallback(async (id: number) => {
-    try {
-      await invoke('delete_clipboard', { id });
-      await loadClipboardHistory();
-      toast('Item deleted.', 'success');
-    } catch (error) {
-      setError(extractErrorMessage(error));
-    }
-  }, [loadClipboardHistory, toast]);
+  const deleteItem = useCallback(
+    async (id: number) => {
+      try {
+        await invoke("delete_clipboard", { id });
+        await loadClipboardHistory();
+        toast("Item deleted.", "success");
+      } catch (error) {
+        setError(extractErrorMessage(error));
+      }
+    },
+    [loadClipboardHistory, toast],
+  );
 
-  const togglePin = useCallback(async (id: number) => {
-    try {
-      await invoke('toggle_pin', { id });
-      await loadClipboardHistory();
-    } catch (error) {
-      setError(extractErrorMessage(error));
-    }
-  }, [loadClipboardHistory]);
+  const togglePin = useCallback(
+    async (id: number) => {
+      try {
+        await invoke("toggle_pin", { id });
+        await loadClipboardHistory();
+      } catch (error) {
+        setError(extractErrorMessage(error));
+      }
+    },
+    [loadClipboardHistory],
+  );
 
   const handleDeleteClick = useCallback(
     (id: number) => {
@@ -179,7 +178,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
         setConfirmDeleteId(id);
       }
     },
-    [deleteItem]
+    [deleteItem],
   );
 
   const handleShareClick = useCallback(
@@ -189,18 +188,18 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
         return;
       }
       if (!user) {
-        setActiveTab('community');
+        setActiveTab("community");
         return;
       }
       setSharingItemId(item.id);
-      setShareNameDraft('');
+      setShareNameDraft("");
     },
-    [user, setActiveTab]
+    [user, setActiveTab],
   );
 
   const handleCancelShare = useCallback(() => {
     setSharingItemId(null);
-    setShareNameDraft('');
+    setShareNameDraft("");
   }, []);
 
   const handleSubmitShare = useCallback(
@@ -212,7 +211,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
       setSubmittingShareId(item.id);
       setError(null);
       try {
-        const json = await invoke<string>('export_clipboard_snippet_json', {
+        const json = await invoke<string>("export_clipboard_snippet_json", {
           content: item.content,
           name,
           tags: [],
@@ -225,7 +224,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
           payload: unknown;
         };
 
-        const { error: insertError } = await supabase.from('fragments').insert({
+        const { error: insertError } = await supabase.from("fragments").insert({
           fragment_type: fragment.fragment_type,
           name: fragment.name,
           tags: fragment.tags,
@@ -237,18 +236,18 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
         if (insertError) throw insertError;
         setSharedIds((prev) => new Set(prev).add(item.id));
         handleCancelShare();
-        toast('Snippet shared to the community library.', 'success');
+        toast("Snippet shared to the community library.", "success");
       } catch (err) {
         setError(extractErrorMessage(err));
       } finally {
         setSubmittingShareId(null);
       }
     },
-    [shareNameDraft, user, handleCancelShare, toast]
+    [shareNameDraft, user, handleCancelShare, toast],
   );
 
-  const filteredItems = items.filter(item =>
-    item.content.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredItems = items.filter((item) =>
+    item.content.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const sharingItem = sharingItemId !== null ? items.find((i) => i.id === sharingItemId) : null;
@@ -259,8 +258,8 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
         title="Clipboard Manager"
         subtitle={
           isMonitoring
-            ? 'Auto-monitoring clipboard changes'
-            : 'Click Start to automatically save clipboard changes'
+            ? "Auto-monitoring clipboard changes"
+            : "Click Start to automatically save clipboard changes"
         }
         accent={<Clipboard size={22} />}
         actions={
@@ -270,8 +269,8 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
               aria-pressed={isMonitoring}
               className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 ${
                 isMonitoring
-                  ? 'bg-frag-danger text-frag-bg hover:bg-frag-danger/90'
-                  : 'bg-frag-success text-frag-bg hover:bg-frag-success/90'
+                  ? "bg-frag-danger text-frag-bg hover:bg-frag-danger/90"
+                  : "bg-frag-success text-frag-bg hover:bg-frag-success/90"
               }`}
             >
               {isMonitoring ? (
@@ -305,7 +304,10 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
           {/* Search Bar */}
           <div className="mb-4 md:mb-6">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-frag-muted" size={20} />
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-frag-muted"
+                size={20}
+              />
               <input
                 type="text"
                 placeholder="Search clipboard history..."
@@ -333,7 +335,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
             <StatCard
               icon={PlayCircle}
               label="Monitoring"
-              value={isMonitoring ? 'Active' : 'Idle'}
+              value={isMonitoring ? "Active" : "Idle"}
               accent="text-frag-success"
             />
           </div>
@@ -344,11 +346,13 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
               {filteredItems.length === 0 ? (
                 <EmptyState
                   icon={Clipboard}
-                  title={items.length === 0 ? 'No clipboard history yet' : 'No items match your search'}
+                  title={
+                    items.length === 0 ? "No clipboard history yet" : "No items match your search"
+                  }
                   description={
                     items.length === 0
-                      ? 'Start monitoring or save your current clipboard to begin.'
-                      : 'Try a different search query.'
+                      ? "Start monitoring or save your current clipboard to begin."
+                      : "Try a different search query."
                   }
                 />
               ) : (
@@ -360,7 +364,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
                     exit={{ opacity: 0, x: -100 }}
                     transition={{ delay: index * 0.03 }}
                     className={`bg-frag-surface border rounded-lg p-3 md:p-4 hover:border-frag-primary/50 transition-all group ${
-                      item.is_pinned ? 'border-frag-accent' : 'border-frag-border'
+                      item.is_pinned ? "border-frag-accent" : "border-frag-border"
                     }`}
                   >
                     <ClipboardItemRow
@@ -421,8 +425,8 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
                 value={shareNameDraft}
                 onChange={(e) => setShareNameDraft(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSubmitShare(sharingItem);
-                  if (e.key === 'Escape') handleCancelShare();
+                  if (e.key === "Enter") handleSubmitShare(sharingItem);
+                  if (e.key === "Escape") handleCancelShare();
                 }}
                 placeholder="Name this snippet..."
                 className="mt-4 w-full bg-frag-bg border border-frag-border rounded-lg px-3 py-2 text-frag-text placeholder-frag-muted focus:outline-none focus:border-frag-primary transition-colors"
@@ -439,7 +443,7 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
                   disabled={!shareNameDraft.trim() || submittingShareId === sharingItem.id}
                   className="px-4 py-2 rounded-lg bg-frag-primary text-frag-bg text-sm font-semibold disabled:opacity-40 transition-opacity"
                 >
-                  {submittingShareId === sharingItem.id ? 'Sharing...' : 'Share'}
+                  {submittingShareId === sharingItem.id ? "Sharing..." : "Share"}
                 </button>
               </div>
             </motion.div>

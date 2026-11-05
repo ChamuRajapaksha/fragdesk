@@ -5,6 +5,7 @@ A lightweight, performance-focused desktop companion for gamers and power users.
 ## Features
 
 ### ⌨️ Macro Manager
+
 - Record keyboard & mouse macros with a **global hotkey** (configurable, default `F9`) that works even when FragDesk isn't focused
 - Playback controls with speed and repeat options, plus the ability to stop playback
 - Assign per-macro playback hotkeys that persist across sessions
@@ -12,11 +13,13 @@ A lightweight, performance-focused desktop companion for gamers and power users.
 - Import/export macros as JSON for sharing
 
 ### 📋 Clipboard Manager
+
 - Automatic clipboard history with live monitoring
 - Search, pin, delete, and copy items back to the clipboard
 - Export/import clipboard snippets as JSON
 
 ### 📊 System Monitor
+
 - Real-time **CPU, RAM, and GPU** metrics
 - Per-core CPU breakdown
 - **Alert rules** — get notified when a metric crosses a threshold (create, toggle, export/import)
@@ -24,20 +27,24 @@ A lightweight, performance-focused desktop companion for gamers and power users.
 - **FPS / 1% lows tracking** via RTSS/MSI Afterburner (reads frame-timing data without hooking games directly)
 
 ### 🎮 Gaming Utilities
+
 - FPS and 1% low frame-time monitoring powered by RTSS
 - Fragment system for one-click setup of macros and configurations
 
 ### 🧩 Fragment Library & Community
+
 - **Architecture:** Fragments are portable, shareable bundles (macros, clipboard snippets, alert rules, and monitor layouts) with a versioned format
 - **Bundled fragments** — a starter library of curated fragments shipped with FragDesk
 - **Community Library** — browse, preview, filter by tags, and import fragments shared by others (Supabase-powered)
 - Submit and manage your own fragments, track download counts, add/remove tags, and report problematic content
 
 ### ⚡ Productivity
+
 - **Command Palette** — press `Ctrl+K` (or `Cmd+K`) to jump between tabs or play a macro instantly
 - **First-run onboarding tour** for new users
 
 ## Tech Stack
+
 - **Desktop Framework:** [Tauri 2.0](https://tauri.app/)
 - **Frontend:** React 19 + TypeScript + TailwindCSS + Vite
 - **Backend:** Rust
@@ -47,6 +54,7 @@ A lightweight, performance-focused desktop companion for gamers and power users.
 - **UI:** framer-motion, lucide-react, recharts
 
 ## Prerequisites
+
 - [Node.js](https://nodejs.org/) (v20+)
 - [Rust](https://rustup.rs/) (via rustup)
 - [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) (Windows only — C++ workload required for Rust `windows` crate dependencies)
@@ -67,17 +75,20 @@ The app degrades gracefully — without these variables, the Community Library s
 ## Development Setup
 
 ### 1. Clone the Repository
+
 ```bash
 git clone https://github.com/yourusername/fragdesk.git
 cd fragdesk
 ```
 
 ### 2. Install Dependencies
+
 ```bash
 npm install
 ```
 
 ### 3. Run Development Server
+
 ```bash
 npm run tauri dev
 ```
@@ -85,11 +96,13 @@ npm run tauri dev
 > **Note:** `npm run tauri dev` spawns its own Vite dev server — you typically don't need to run `npm run dev` separately. The Tauri dev server expects the frontend build tooling (Vite) to be available, which `npm install` handles.
 
 ### 4. Run Frontend Only (no Tauri window)
+
 ```bash
 npm run dev
 ```
 
 ### 5. Build for Production
+
 ```bash
 npm run tauri build
 ```
@@ -98,14 +111,15 @@ npm run tauri build
 
 ## Key Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Run the Vite frontend only |
-| `npm run build` | Type-check and build the frontend only |
-| `npm run tauri dev` | Run the full desktop app in development |
-| `npm run tauri build` | Build the production desktop app |
+| Command               | Description                             |
+| --------------------- | --------------------------------------- |
+| `npm run dev`         | Run the Vite frontend only              |
+| `npm run build`       | Type-check and build the frontend only  |
+| `npm run tauri dev`   | Run the full desktop app in development |
+| `npm run tauri build` | Build the production desktop app        |
 
 ## Project Structure
+
 ```
 fragdesk/
 ├── src/                          # React frontend
@@ -151,6 +165,7 @@ All backend logic is exposed via `#[tauri::command]` functions registered in `sr
 ## Team Workflow
 
 ### Creating a Feature Branch
+
 ```bash
 # Always pull latest first
 git pull origin main
@@ -169,6 +184,7 @@ git push origin feature/your-feature-name
 ```
 
 ### Daily Development
+
 1. Pull latest changes: `git pull origin main`
 2. Create feature branch
 3. Code your feature
@@ -179,9 +195,11 @@ git push origin feature/your-feature-name
 8. Merge after approval
 
 ## Team Members
+
 - **Chamuditha Rajapaksha**
 - **Shajeeve Balakrishnan**
 - **Jaaishan Miranda**
 
 ## License
+
 [MIT](LICENSE) — See LICENSE file for details
