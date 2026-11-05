@@ -1,4 +1,5 @@
-use crate::database::{get_setting, init_database, set_setting};
+use crate::commands::with_db;
+use crate::database::{get_setting, set_setting, DbState};
 use crate::fragments::{Fragment, FragmentPayload, MonitorWidgetConfig, FRAGMENT_FORMAT_VERSION};
 
 const SETTING_KEY: &str = "monitor_layout";
@@ -57,9 +58,10 @@ fn normalize_layout(input: Vec<MonitorWidgetConfig>) -> Vec<MonitorWidgetConfig>
 }
 
 #[tauri::command]
-pub fn get_monitor_layout() -> Result<Vec<MonitorWidgetConfig>, String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    match get_setting(&conn, SETTING_KEY).map_err(|e| e.to_string())? {
+pub fn get_monitor_layout(
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<MonitorWidgetConfig>, String> {
+    match with_db(&state, |conn| get_setting(conn, SETTING_KEY))? {
         Some(json) => {
             let parsed: Vec<MonitorWidgetConfig> =
                 serde_json::from_str(&json).unwrap_or_else(|_| default_layout());
@@ -71,18 +73,21 @@ pub fn get_monitor_layout() -> Result<Vec<MonitorWidgetConfig>, String> {
 
 #[tauri::command]
 pub fn set_monitor_layout(
+    state: tauri::State<'_, DbState>,
     widgets: Vec<MonitorWidgetConfig>,
 ) -> Result<Vec<MonitorWidgetConfig>, String> {
     let normalized = normalize_layout(widgets);
     let json = serde_json::to_string(&normalized).map_err(|e| e.to_string())?;
-    let conn = init_database().map_err(|e| e.to_string())?;
-    set_setting(&conn, SETTING_KEY, &json).map_err(|e| e.to_string())?;
+    with_db(&state, |conn| set_setting(conn, SETTING_KEY, &json))?;
     Ok(normalized)
 }
 
 #[tauri::command]
-pub fn export_monitor_layout_json(name: String) -> Result<String, String> {
-    let widgets = get_monitor_layout()?;
+pub fn export_monitor_layout_json(
+    state: tauri::State<'_, DbState>,
+    name: String,
+) -> Result<String, String> {
+    let widgets = get_monitor_layout(state)?;
 
     let fragment = Fragment {
         format_version: FRAGMENT_FORMAT_VERSION,
@@ -101,7 +106,10 @@ pub fn export_monitor_layout_json(name: String) -> Result<String, String> {
 /// layout with this." There's no separate list of "your layouts" to
 /// browse afterward.
 #[tauri::command]
-pub fn import_monitor_layout_json(json: String) -> Result<Vec<MonitorWidgetConfig>, String> {
+pub fn import_monitor_layout_json(
+    state: tauri::State<'_, DbState>,
+    json: String,
+) -> Result<Vec<MonitorWidgetConfig>, String> {
     let fragment: Fragment =
         serde_json::from_str(&json).map_err(|e| format!("Couldn't parse fragment file: {e}"))?;
 
@@ -116,7 +124,7 @@ pub fn import_monitor_layout_json(json: String) -> Result<Vec<MonitorWidgetConfi
         return Err("This fragment isn't a monitor layout".to_string());
     };
 
-    set_monitor_layout(widgets)
+    set_monitor_layout(state, widgets)
 }
 
 #[cfg(test)]
