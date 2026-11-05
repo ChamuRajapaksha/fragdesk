@@ -24,7 +24,6 @@ fn initialize_schema(conn: &Connection) -> Result<()> {
         [],
     )?;
 
-
     // Create clipboard_history table
     conn.execute(
         "CREATE TABLE IF NOT EXISTS clipboard_history (
@@ -189,7 +188,7 @@ pub fn insert_clipboard_item(conn: &Connection, content: &str) -> Result<()> {
 pub fn get_clipboard_history(conn: &Connection, limit: i32) -> Result<Vec<ClipboardItem>> {
     let mut stmt = conn.prepare(
         "SELECT id, content, timestamp, is_pinned FROM clipboard_history 
-         ORDER BY timestamp DESC LIMIT ?1"
+         ORDER BY timestamp DESC LIMIT ?1",
     )?;
 
     let items = stmt.query_map([limit], |row| {
@@ -240,12 +239,32 @@ pub fn toggle_pin_item(conn: &Connection, id: i32) -> Result<()> {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
 pub enum MacroEvent {
-    KeyDown { key: String, delay_ms: u64 },
-    KeyUp { key: String, delay_ms: u64 },
-    MouseMove { x: f64, y: f64, delay_ms: u64 },
-    MouseDown { button: String, delay_ms: u64 },
-    MouseUp { button: String, delay_ms: u64 },
-    Wheel { delta_x: i64, delta_y: i64, delay_ms: u64 },
+    KeyDown {
+        key: String,
+        delay_ms: u64,
+    },
+    KeyUp {
+        key: String,
+        delay_ms: u64,
+    },
+    MouseMove {
+        x: f64,
+        y: f64,
+        delay_ms: u64,
+    },
+    MouseDown {
+        button: String,
+        delay_ms: u64,
+    },
+    MouseUp {
+        button: String,
+        delay_ms: u64,
+    },
+    Wheel {
+        delta_x: i64,
+        delta_y: i64,
+        delay_ms: u64,
+    },
 }
 
 /// Metadata-only view used for list screens (no event payload).
@@ -303,7 +322,14 @@ pub fn insert_macro(
     conn.execute(
         "INSERT INTO macros (id, name, created_at, event_count, duration_ms, events_json)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![id, name, timestamp, events.len() as i32, duration_ms, events_json],
+        rusqlite::params![
+            id,
+            name,
+            timestamp,
+            events.len() as i32,
+            duration_ms,
+            events_json
+        ],
     )?;
 
     Ok(())
@@ -375,7 +401,6 @@ pub fn get_macro_by_id(conn: &Connection, id: &str) -> Result<Option<MacroItem>>
     } else {
         Ok(None)
     }
-
 }
 
 pub fn set_macro_tags(conn: &Connection, id: &str, tags: &[String]) -> Result<()> {
@@ -436,7 +461,6 @@ pub fn load_hotkey_map(conn: &Connection) -> Result<Vec<(String, String)>> {
     Ok(result)
 }
 
- 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AlertRule {
     pub id: String,
@@ -448,7 +472,7 @@ pub struct AlertRule {
     pub source: Option<String>,
     pub created_at: i64,
 }
- 
+
 pub fn insert_alert_rule(
     conn: &Connection,
     id: &str,
@@ -466,13 +490,13 @@ pub fn insert_alert_rule(
     )?;
     Ok(())
 }
- 
+
 pub fn get_alert_rules(conn: &Connection) -> Result<Vec<AlertRule>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, metric, comparison, threshold, enabled, source, created_at
          FROM monitor_alert_rules ORDER BY created_at DESC",
     )?;
- 
+
     let items = stmt.query_map([], |row| {
         Ok(AlertRule {
             id: row.get(0)?,
@@ -485,14 +509,14 @@ pub fn get_alert_rules(conn: &Connection) -> Result<Vec<AlertRule>> {
             created_at: row.get(7)?,
         })
     })?;
- 
+
     let mut result = Vec::new();
     for item in items {
         result.push(item?);
     }
     Ok(result)
 }
- 
+
 pub fn get_alert_rule_by_id(conn: &Connection, id: &str) -> Result<Option<AlertRule>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, metric, comparison, threshold, enabled, source, created_at
@@ -514,12 +538,15 @@ pub fn get_alert_rule_by_id(conn: &Connection, id: &str) -> Result<Option<AlertR
         Ok(None)
     }
 }
- 
+
 pub fn delete_alert_rule_item(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM monitor_alert_rules WHERE id = ?1", rusqlite::params![id])?;
+    conn.execute(
+        "DELETE FROM monitor_alert_rules WHERE id = ?1",
+        rusqlite::params![id],
+    )?;
     Ok(())
 }
- 
+
 pub fn toggle_alert_rule_item(conn: &Connection, id: &str) -> Result<()> {
     conn.execute(
         "UPDATE monitor_alert_rules SET enabled = NOT enabled WHERE id = ?1",
@@ -556,9 +583,7 @@ mod hotkey_normalization_tests {
 
         normalize_stored_hotkeys(&conn).unwrap();
 
-        let record = get_setting(&conn, "record_toggle_hotkey")
-            .unwrap()
-            .unwrap();
+        let record = get_setting(&conn, "record_toggle_hotkey").unwrap().unwrap();
         assert_eq!(record, "shift+control+F9");
 
         let stored = load_hotkey_map(&conn).unwrap();
@@ -573,4 +598,3 @@ mod hotkey_normalization_tests {
         assert_eq!(canonicalize_hotkey(&stored[0].0).unwrap(), stored[0].0);
     }
 }
- 

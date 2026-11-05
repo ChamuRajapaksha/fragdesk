@@ -1,5 +1,8 @@
-use crate::fragments::{Fragment, FragmentPayload, FRAGMENT_FORMAT_VERSION}; 
-use crate::database::{init_database, insert_clipboard_item, get_clipboard_history, ClipboardItem, delete_clipboard_item, toggle_pin_item};
+use crate::database::{
+    delete_clipboard_item, get_clipboard_history, init_database, insert_clipboard_item,
+    toggle_pin_item, ClipboardItem,
+};
+use crate::fragments::{Fragment, FragmentPayload, FRAGMENT_FORMAT_VERSION};
 use arboard::Clipboard;
 use serde::Serialize;
 use std::sync::{Arc, Condvar, Mutex};
@@ -101,14 +104,14 @@ pub fn start_clipboard_monitor(
                 *last_sample_at_clone.lock().unwrap() = Some(chrono::Utc::now().timestamp());
 
                 let mut last = last_content_clone.lock().unwrap();
-                
+
                 if content != *last && !content.trim().is_empty() {
                     *last = content.clone();
-                    
+
                     // Save to database
                     if let Ok(conn) = init_database() {
                         let _ = insert_clipboard_item(&conn, &content);
-                        
+
                         // Emit event to frontend
                         let _ = app_handle.emit("clipboard-updated", ());
                     }
@@ -213,10 +216,10 @@ pub fn export_clipboard_snippet_json(
         exported_at: chrono::Utc::now().timestamp(),
         payload: FragmentPayload::ClipboardSnippet { content },
     };
- 
+
     serde_json::to_string_pretty(&fragment).map_err(|e| e.to_string())
 }
- 
+
 /// Imports a clipboard snippet fragment, inserting it as a new clipboard
 /// history entry. Reuses `insert_clipboard_item` directly (the same
 /// function `save_clipboard_text` calls) rather than going through
@@ -225,18 +228,18 @@ pub fn export_clipboard_snippet_json(
 pub fn import_clipboard_snippet_json(json: String) -> Result<(), String> {
     let fragment: Fragment =
         serde_json::from_str(&json).map_err(|e| format!("Couldn't parse fragment file: {e}"))?;
- 
+
     if fragment.format_version > FRAGMENT_FORMAT_VERSION {
         return Err(
             "This fragment was exported by a newer version of FragDesk and can't be read yet"
                 .to_string(),
         );
     }
- 
+
     let FragmentPayload::ClipboardSnippet { content } = fragment.payload else {
         return Err("This fragment isn't a clipboard snippet".to_string());
     };
- 
+
     let conn = init_database().map_err(|e| e.to_string())?;
     insert_clipboard_item(&conn, &content).map_err(|e| e.to_string())?;
     Ok(())

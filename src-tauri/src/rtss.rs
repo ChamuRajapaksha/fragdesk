@@ -98,11 +98,13 @@ mod windows_impl {
     pub fn read() -> Result<Vec<RtssApp>, String> {
         let wide_name = to_wide(RTSS_MAPPING_NAME);
 
-        let handle = unsafe { OpenFileMappingW(FILE_MAP_READ.0, false, PCWSTR(wide_name.as_ptr())) }
-            .map_err(|_| {
-                "RTSS not detected -- is RTSS or MSI Afterburner running and hooked into a game?"
-                    .to_string()
-            })?;
+        let handle = unsafe {
+            OpenFileMappingW(FILE_MAP_READ.0, false, PCWSTR(wide_name.as_ptr()))
+        }
+        .map_err(|_| {
+            "RTSS not detected -- is RTSS or MSI Afterburner running and hooked into a game?"
+                .to_string()
+        })?;
 
         let result = unsafe { read_from_handle(&handle) };
 
@@ -208,15 +210,15 @@ mod windows_impl {
         let mut apps = Vec::new();
 
         for i in 0..app_arr_size {
-            let stride = i.checked_mul(app_entry_size).ok_or_else(|| {
-                format!("RTSS app entry {i} stride overflows address space")
-            })?;
-            let entry_offset = app_arr_offset.checked_add(stride).ok_or_else(|| {
-                format!("RTSS app entry {i} offset overflows address space")
-            })?;
-            let entry_end = entry_offset.checked_add(ENTRY_PREFIX_SIZE).ok_or_else(|| {
-                format!("RTSS app entry {i} end offset overflows address space")
-            })?;
+            let stride = i
+                .checked_mul(app_entry_size)
+                .ok_or_else(|| format!("RTSS app entry {i} stride overflows address space"))?;
+            let entry_offset = app_arr_offset
+                .checked_add(stride)
+                .ok_or_else(|| format!("RTSS app entry {i} offset overflows address space"))?;
+            let entry_end = entry_offset
+                .checked_add(ENTRY_PREFIX_SIZE)
+                .ok_or_else(|| format!("RTSS app entry {i} end offset overflows address space"))?;
 
             if entry_end > data.len() {
                 return Err(format!(
@@ -238,8 +240,7 @@ mod windows_impl {
                 .iter()
                 .position(|&b| b == 0)
                 .unwrap_or(name_bytes.len());
-            let name =
-                process_name(&String::from_utf8_lossy(&name_bytes[..name_end])).to_string();
+            let name = process_name(&String::from_utf8_lossy(&name_bytes[..name_end])).to_string();
 
             // offset within entry: processId(4) + name(260) + flags(4)
             // + time0(4) + time1(4) = 276, then frames, then frameTime
@@ -276,9 +277,7 @@ mod windows_impl {
 
     #[cfg(test)]
     mod tests {
-        use super::{
-            parse, process_name, APP_NAME_MAX_LEN, ENTRY_PREFIX_SIZE, RTSS_SIGNATURE,
-        };
+        use super::{parse, process_name, APP_NAME_MAX_LEN, ENTRY_PREFIX_SIZE, RTSS_SIGNATURE};
 
         fn header(entry_size: u32, arr_offset: u32, count: u32, total_len: usize) -> Vec<u8> {
             let mut data = vec![0u8; total_len];
@@ -337,23 +336,13 @@ mod windows_impl {
 
         #[test]
         fn accepts_header_with_empty_slot() {
-            let data = header(
-                ENTRY_PREFIX_SIZE as u32,
-                20,
-                1,
-                20 + ENTRY_PREFIX_SIZE,
-            );
+            let data = header(ENTRY_PREFIX_SIZE as u32, 20, 1, 20 + ENTRY_PREFIX_SIZE);
             assert!(parse(&data).unwrap().is_empty());
         }
 
         #[test]
         fn parses_valid_app_entry() {
-            let mut data = header(
-                ENTRY_PREFIX_SIZE as u32,
-                20,
-                1,
-                20 + ENTRY_PREFIX_SIZE,
-            );
+            let mut data = header(ENTRY_PREFIX_SIZE as u32, 20, 1, 20 + ENTRY_PREFIX_SIZE);
 
             let entry = 20usize;
             data[entry..entry + 4].copy_from_slice(&4242u32.to_le_bytes());
@@ -362,8 +351,7 @@ mod windows_impl {
 
             let frames_offset = entry + 4 + APP_NAME_MAX_LEN + 4 + 4 + 4;
             data[frames_offset..frames_offset + 4].copy_from_slice(&7u32.to_le_bytes());
-            data[frames_offset + 4..frames_offset + 8]
-                .copy_from_slice(&16667u32.to_le_bytes());
+            data[frames_offset + 4..frames_offset + 8].copy_from_slice(&16667u32.to_le_bytes());
 
             let apps = parse(&data).unwrap();
             assert_eq!(apps.len(), 1);

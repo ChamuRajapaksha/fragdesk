@@ -29,8 +29,7 @@ fn compose_stats(
         return None;
     }
     let usage_percent = usage_percent.clamp(0.0, 100.0);
-    let memory_percent =
-        ((vram_used as f64 / vram_total as f64) * 100.0).clamp(0.0, 100.0) as f32;
+    let memory_percent = ((vram_used as f64 / vram_total as f64) * 100.0).clamp(0.0, 100.0) as f32;
 
     Some(GpuStats {
         name,
@@ -60,9 +59,8 @@ mod windows_impl {
     use windows::core::{Interface, PCWSTR};
     use windows::Win32::Foundation::ERROR_SUCCESS;
     use windows::Win32::Graphics::Dxgi::{
-        CreateDXGIFactory2, DXGI_ADAPTER_DESC1, DXGI_ADAPTER_FLAG_SOFTWARE,
-        DXGI_MEMORY_SEGMENT_GROUP_LOCAL, DXGI_QUERY_VIDEO_MEMORY_INFO, IDXGIAdapter1,
-        IDXGIAdapter3, IDXGIFactory4,
+        CreateDXGIFactory2, IDXGIAdapter1, IDXGIAdapter3, IDXGIFactory4, DXGI_ADAPTER_DESC1,
+        DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, DXGI_QUERY_VIDEO_MEMORY_INFO,
     };
     use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
     use windows::Win32::System::Performance::{
@@ -120,8 +118,9 @@ mod windows_impl {
     /// Basic Render Driver / WARP / Remote Display / GDK adapters are
     /// all Microsoft-signed stubs that report no meaningful counters.
     fn primary_adapter() -> Result<Option<AdapterInfo>, String> {
-        let factory: IDXGIFactory4 = unsafe { CreateDXGIFactory2::<IDXGIFactory4>(Default::default()) }
-            .map_err(|e| format!("failed to create DXGI factory: {e}"))?;
+        let factory: IDXGIFactory4 =
+            unsafe { CreateDXGIFactory2::<IDXGIFactory4>(Default::default()) }
+                .map_err(|e| format!("failed to create DXGI factory: {e}"))?;
 
         let mut index: u32 = 0;
         loop {
@@ -227,7 +226,9 @@ mod windows_impl {
         }
 
         let (items, buffer_len) = read_formatted_items(counter)?;
-        Ok(aggregate_usage_bounded(&items, buffer_len, luid_high, luid_low))
+        Ok(aggregate_usage_bounded(
+            &items, buffer_len, luid_high, luid_low,
+        ))
     }
 
     /// Returns the item array plus the byte length of the buffer PDH wrote
@@ -239,13 +240,21 @@ mod windows_impl {
         let mut buffer_size: u32 = 0;
         let mut item_count: u32 = 0;
         let status = unsafe {
-            PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &mut buffer_size, &mut item_count, None)
+            PdhGetFormattedCounterArrayW(
+                counter,
+                PDH_FMT_DOUBLE,
+                &mut buffer_size,
+                &mut item_count,
+                None,
+            )
         };
         if status != ERROR_SUCCESS.0 && status != PDH_MORE_DATA {
             if status == PDH_NO_DATA {
                 return Ok((Vec::new(), 0));
             }
-            return Err(format!("failed to size GPU Engine counter buffer: 0x{status:08x}"));
+            return Err(format!(
+                "failed to size GPU Engine counter buffer: 0x{status:08x}"
+            ));
         }
 
         let buf_items = (buffer_size as usize)
@@ -264,7 +273,9 @@ mod windows_impl {
             )
         };
         if status != ERROR_SUCCESS.0 {
-            return Err(format!("failed to read GPU Engine counter data: 0x{status:08x}"));
+            return Err(format!(
+                "failed to read GPU Engine counter data: 0x{status:08x}"
+            ));
         }
 
         items.truncate(item_count as usize);
@@ -463,8 +474,8 @@ mod tests {
     fn composes_stats_with_memory_percent() {
         let stats = compose_stats(
             "NVIDIA GeForce RTX 4070".to_string(),
-            8_589_934_592,   // 8 GiB in use
-            17_179_869_184,  // 16 GiB total
+            8_589_934_592,  // 8 GiB in use
+            17_179_869_184, // 16 GiB total
             75.0,
         )
         .unwrap();
@@ -479,7 +490,8 @@ mod tests {
     fn clamps_out_of_range_percentages_to_0_100() {
         // usage above 100 (multi-engine PDH sum overflow) and VRAM used
         // exceeding the reporter's own budget both clamp to 100.
-        let stats = compose_stats("GPU".to_string(), 20_000_000_000, 10_000_000_000, 250.0).unwrap();
+        let stats =
+            compose_stats("GPU".to_string(), 20_000_000_000, 10_000_000_000, 250.0).unwrap();
         assert_eq!(stats.usage_percent, 100.0);
         assert_eq!(stats.memory_percent, 100.0);
 

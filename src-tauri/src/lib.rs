@@ -1,14 +1,18 @@
-mod database;
 mod commands;
+mod database;
 mod fragments;
 mod gpu;
 mod hotkey;
 mod rtss;
 
+use commands::alerts::{
+    create_alert_rule, delete_alert_rule, export_alert_rule_json, get_alert_rules,
+    import_alert_rule_json, toggle_alert_rule,
+};
 use commands::clipboard::{
-    copy_to_clipboard, delete_clipboard, get_clipboard_items, get_current_clipboard,
-    save_clipboard_text, start_clipboard_monitor, stop_clipboard_monitor,
-    get_clipboard_monitor_status, toggle_pin, export_clipboard_snippet_json, import_clipboard_snippet_json,
+    copy_to_clipboard, delete_clipboard, export_clipboard_snippet_json, get_clipboard_items,
+    get_clipboard_monitor_status, get_current_clipboard, import_clipboard_snippet_json,
+    save_clipboard_text, start_clipboard_monitor, stop_clipboard_monitor, toggle_pin,
     ClipboardMonitor,
 };
 use commands::macros::{
@@ -19,14 +23,9 @@ use commands::macros::{
     stop_macro_recording, HotkeyRegistry, MacroPlayback, MacroRecorder, RecordHotkeyState,
     DEFAULT_RECORD_HOTKEY, RECORD_HOTKEY_SETTING_KEY,
 };
-use commands::alerts::{
-    create_alert_rule, delete_alert_rule, export_alert_rule_json,
-    get_alert_rules, import_alert_rule_json, toggle_alert_rule,
-};
 
 use commands::monitor_layout::{
-    export_monitor_layout_json, get_monitor_layout, import_monitor_layout_json,
-    set_monitor_layout,
+    export_monitor_layout_json, get_monitor_layout, import_monitor_layout_json, set_monitor_layout,
 };
 
 use commands::onboarding::{has_completed_onboarding, mark_onboarding_completed};
@@ -35,9 +34,7 @@ use commands::theme::{get_ui_theme, set_ui_theme};
 
 use commands::data::wipe_local_data;
 
-use commands::fps::{
-    get_fps_stats, list_rtss_apps, set_fps_tracking_target, FpsMonitorState,
-};
+use commands::fps::{get_fps_stats, list_rtss_apps, set_fps_tracking_target, FpsMonitorState};
 
 use commands::gpu::get_gpu_stats;
 

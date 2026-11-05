@@ -1,8 +1,8 @@
 use crate::database::{
     delete_macro_item, get_macro_by_id, get_macro_id_by_hotkey, get_macros as db_get_macros,
     get_setting, init_database, insert_macro, rename_macro_item, set_macro_hotkey_item,
-    set_macro_source_item as db_set_macro_source, set_macro_tags as db_set_macro_tags,
-    set_setting, MacroEvent, MacroItem, MacroSummary,
+    set_macro_source_item as db_set_macro_source, set_macro_tags as db_set_macro_tags, set_setting,
+    MacroEvent, MacroItem, MacroSummary,
 };
 use crate::fragments::{Fragment, FragmentPayload, FRAGMENT_FORMAT_VERSION};
 use crate::hotkey::canonicalize_hotkey;
@@ -560,7 +560,11 @@ pub fn set_macro_hotkey(
         registry.map.lock().unwrap().remove(old_key);
     }
     if let Some(new_key) = &hotkey {
-        registry.map.lock().unwrap().insert(new_key.clone(), id.clone());
+        registry
+            .map
+            .lock()
+            .unwrap()
+            .insert(new_key.clone(), id.clone());
     }
 
     Ok(())
@@ -847,9 +851,18 @@ fn parse_key(s: &str) -> Option<Key> {
         "DownArrow" => DownArrow,
         "End" => End,
         "Escape" => Escape,
-        "F1" => F1, "F2" => F2, "F3" => F3, "F4" => F4,
-        "F5" => F5, "F6" => F6, "F7" => F7, "F8" => F8,
-        "F9" => F9, "F10" => F10, "F11" => F11, "F12" => F12,
+        "F1" => F1,
+        "F2" => F2,
+        "F3" => F3,
+        "F4" => F4,
+        "F5" => F5,
+        "F6" => F6,
+        "F7" => F7,
+        "F8" => F8,
+        "F9" => F9,
+        "F10" => F10,
+        "F11" => F11,
+        "F12" => F12,
         "Home" => Home,
         "LeftArrow" => LeftArrow,
         "MetaLeft" => MetaLeft,
@@ -868,16 +881,42 @@ fn parse_key(s: &str) -> Option<Key> {
         "Pause" => Pause,
         "NumLock" => NumLock,
         "BackQuote" => BackQuote,
-        "Num0" => Num0, "Num1" => Num1, "Num2" => Num2, "Num3" => Num3,
-        "Num4" => Num4, "Num5" => Num5, "Num6" => Num6, "Num7" => Num7,
-        "Num8" => Num8, "Num9" => Num9,
-        "KeyA" => KeyA, "KeyB" => KeyB, "KeyC" => KeyC, "KeyD" => KeyD,
-        "KeyE" => KeyE, "KeyF" => KeyF, "KeyG" => KeyG, "KeyH" => KeyH,
-        "KeyI" => KeyI, "KeyJ" => KeyJ, "KeyK" => KeyK, "KeyL" => KeyL,
-        "KeyM" => KeyM, "KeyN" => KeyN, "KeyO" => KeyO, "KeyP" => KeyP,
-        "KeyQ" => KeyQ, "KeyR" => KeyR, "KeyS" => KeyS, "KeyT" => KeyT,
-        "KeyU" => KeyU, "KeyV" => KeyV, "KeyW" => KeyW, "KeyX" => KeyX,
-        "KeyY" => KeyY, "KeyZ" => KeyZ,
+        "Num0" => Num0,
+        "Num1" => Num1,
+        "Num2" => Num2,
+        "Num3" => Num3,
+        "Num4" => Num4,
+        "Num5" => Num5,
+        "Num6" => Num6,
+        "Num7" => Num7,
+        "Num8" => Num8,
+        "Num9" => Num9,
+        "KeyA" => KeyA,
+        "KeyB" => KeyB,
+        "KeyC" => KeyC,
+        "KeyD" => KeyD,
+        "KeyE" => KeyE,
+        "KeyF" => KeyF,
+        "KeyG" => KeyG,
+        "KeyH" => KeyH,
+        "KeyI" => KeyI,
+        "KeyJ" => KeyJ,
+        "KeyK" => KeyK,
+        "KeyL" => KeyL,
+        "KeyM" => KeyM,
+        "KeyN" => KeyN,
+        "KeyO" => KeyO,
+        "KeyP" => KeyP,
+        "KeyQ" => KeyQ,
+        "KeyR" => KeyR,
+        "KeyS" => KeyS,
+        "KeyT" => KeyT,
+        "KeyU" => KeyU,
+        "KeyV" => KeyV,
+        "KeyW" => KeyW,
+        "KeyX" => KeyX,
+        "KeyY" => KeyY,
+        "KeyZ" => KeyZ,
         "LeftBracket" => LeftBracket,
         "RightBracket" => RightBracket,
         "Minus" => Minus,
@@ -888,8 +927,16 @@ fn parse_key(s: &str) -> Option<Key> {
         "KpMultiply" => KpMultiply,
         "KpDivide" => KpDivide,
         "KpDelete" => KpDelete,
-        "Kp0" => Kp0, "Kp1" => Kp1, "Kp2" => Kp2, "Kp3" => Kp3, "Kp4" => Kp4,
-        "Kp5" => Kp5, "Kp6" => Kp6, "Kp7" => Kp7, "Kp8" => Kp8, "Kp9" => Kp9,
+        "Kp0" => Kp0,
+        "Kp1" => Kp1,
+        "Kp2" => Kp2,
+        "Kp3" => Kp3,
+        "Kp4" => Kp4,
+        "Kp5" => Kp5,
+        "Kp6" => Kp6,
+        "Kp7" => Kp7,
+        "Kp8" => Kp8,
+        "Kp9" => Kp9,
         other => {
             let code = other
                 .strip_prefix("Unknown(")?
@@ -922,7 +969,9 @@ fn to_sim_event(event: &MacroEvent) -> Option<EventType> {
         MacroEvent::MouseMove { x, y, .. } => Some(EventType::MouseMove { x: *x, y: *y }),
         MacroEvent::MouseDown { button, .. } => parse_button(button).map(EventType::ButtonPress),
         MacroEvent::MouseUp { button, .. } => parse_button(button).map(EventType::ButtonRelease),
-        MacroEvent::Wheel { delta_x, delta_y, .. } => Some(EventType::Wheel {
+        MacroEvent::Wheel {
+            delta_x, delta_y, ..
+        } => Some(EventType::Wheel {
             delta_x: *delta_x,
             delta_y: *delta_y,
         }),
@@ -932,25 +981,25 @@ fn to_sim_event(event: &MacroEvent) -> Option<EventType> {
 #[cfg(test)]
 mod key_parsing_tests {
     use super::*;
- 
+
     #[test]
     fn parse_key_handles_letter_keys() {
         assert!(matches!(parse_key("KeyA"), Some(Key::KeyA)));
         assert!(matches!(parse_key("KeyZ"), Some(Key::KeyZ)));
     }
- 
+
     #[test]
     fn parse_key_handles_number_keys() {
         assert!(matches!(parse_key("Num0"), Some(Key::Num0)));
         assert!(matches!(parse_key("Num9"), Some(Key::Num9)));
     }
- 
+
     #[test]
     fn parse_key_handles_function_keys() {
         assert!(matches!(parse_key("F1"), Some(Key::F1)));
         assert!(matches!(parse_key("F12"), Some(Key::F12)));
     }
- 
+
     #[test]
     fn parse_key_handles_modifier_and_special_keys() {
         assert!(matches!(parse_key("ControlLeft"), Some(Key::ControlLeft)));
@@ -959,13 +1008,13 @@ mod key_parsing_tests {
         assert!(matches!(parse_key("Escape"), Some(Key::Escape)));
         assert!(matches!(parse_key("Space"), Some(Key::Space)));
     }
- 
+
     #[test]
     fn parse_key_handles_keypad_keys() {
         assert!(matches!(parse_key("Kp5"), Some(Key::Kp5)));
         assert!(matches!(parse_key("KpReturn"), Some(Key::KpReturn)));
     }
- 
+
     #[test]
     fn parse_key_round_trips_unknown_variant() {
         // This is the fallback path for platform-specific key codes rdev
@@ -977,21 +1026,21 @@ mod key_parsing_tests {
             other => panic!("expected Unknown(42), got {other:?}"),
         }
     }
- 
+
     #[test]
     fn parse_key_rejects_garbage_input() {
         assert!(parse_key("NotARealKey").is_none());
         assert!(parse_key("").is_none());
         assert!(parse_key("Unknown(not_a_number)").is_none());
     }
- 
+
     #[test]
     fn parse_button_handles_named_buttons() {
         assert!(matches!(parse_button("Left"), Some(Button::Left)));
         assert!(matches!(parse_button("Right"), Some(Button::Right)));
         assert!(matches!(parse_button("Middle"), Some(Button::Middle)));
     }
- 
+
     #[test]
     fn parse_button_round_trips_unknown_variant() {
         match parse_button("Unknown(7)") {
@@ -999,13 +1048,13 @@ mod key_parsing_tests {
             other => panic!("expected Unknown(7), got {other:?}"),
         }
     }
- 
+
     #[test]
     fn parse_button_rejects_garbage_input() {
         assert!(parse_button("NotARealButton").is_none());
         assert!(parse_button("").is_none());
     }
- 
+
     #[test]
     fn key_and_button_debug_format_round_trips_for_common_cases() {
         // The recorder stores keys/buttons via format!("{:?}", key) and
@@ -1016,7 +1065,7 @@ mod key_parsing_tests {
         let key = Key::KeyQ;
         let debug_str = format!("{:?}", key);
         assert!(matches!(parse_key(&debug_str), Some(Key::KeyQ)));
- 
+
         let button = Button::Left;
         let debug_str = format!("{:?}", button);
         assert!(matches!(parse_button(&debug_str), Some(Button::Left)));

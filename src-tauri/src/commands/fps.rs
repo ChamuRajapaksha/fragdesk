@@ -179,8 +179,7 @@ pub fn calculate_fps_stats(frame_times_us: &[u32]) -> Option<FpsStats> {
 
     let one_percent_count = ((sorted_times.len() as f64) * 0.01).ceil().max(1.0) as usize;
     let slowest = &sorted_times[..one_percent_count.min(sorted_times.len())];
-    let avg_slowest_time_us =
-        slowest.iter().map(|&t| t as f64).sum::<f64>() / slowest.len() as f64;
+    let avg_slowest_time_us = slowest.iter().map(|&t| t as f64).sum::<f64>() / slowest.len() as f64;
     let one_percent_low_fps = 1_000_000.0 / avg_slowest_time_us;
 
     Some(FpsStats {
@@ -227,7 +226,10 @@ mod tests {
         samples.push(100_000);
 
         let stats = calculate_fps_stats(&samples).unwrap();
-        assert!(stats.avg_fps > 55.0, "one stutter shouldn't tank the average much");
+        assert!(
+            stats.avg_fps > 55.0,
+            "one stutter shouldn't tank the average much"
+        );
         assert!(
             stats.one_percent_low_fps < 15.0,
             "the 1% low should reflect the stutter frame specifically, got {}",

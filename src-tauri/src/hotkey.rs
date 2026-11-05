@@ -22,8 +22,8 @@ pub fn canonicalize_hotkey(input: &str) -> Result<String, String> {
         return Err("Hotkey cannot be empty".to_string());
     }
 
-    let shortcut = Shortcut::from_str(trimmed)
-        .map_err(|e| format!("Invalid hotkey '{input}': {e}"))?;
+    let shortcut =
+        Shortcut::from_str(trimmed).map_err(|e| format!("Invalid hotkey '{input}': {e}"))?;
 
     Ok(shortcut.to_string())
 }
