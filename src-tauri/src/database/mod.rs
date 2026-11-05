@@ -1,7 +1,31 @@
 use crate::hotkey::canonicalize_hotkey;
 use rusqlite::{Connection, Result};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::Duration;
+
+/// The single long-lived connection shared by every command. Holding one
+/// connection behind a mutex (rather than opening the DB on every command)
+/// keeps WAL/busy-timeout settings in effect and avoids repeated open/schema
+/// work. Commands access it through `crate::commands::with_db`.
+pub struct DbState {
+    conn: Mutex<Connection>,
+}
+
+impl DbState {
+    pub fn new(conn: Connection) -> Self {
+        Self {
+            conn: Mutex::new(conn),
+        }
+    }
+
+    pub fn with<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+        let conn = self.conn.lock().map_err(|_| {
+            schema_error("database lock poisoned; a previous command panicked while holding it")
+        })?;
+        f(&conn)
+    }
+}
 
 pub fn init_database() -> Result<Connection> {
     let db_path = get_db_path()?;

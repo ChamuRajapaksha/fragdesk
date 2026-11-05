@@ -66,69 +66,67 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
+            // Open the shared connection once. If the database cannot be
+            // opened or migrated, fail startup loudly rather than running
+            // with commands that would silently do nothing.
+            let conn = database::init_database()?;
+            app.manage(database::DbState::new(conn));
+
             // Load whichever record-toggle hotkey was saved last (or the
             // "F9" default on first run), register it, and make it
             // available to commands/the shortcut handler via managed state.
-            if let Ok(conn) = database::init_database() {
-                let saved_hotkey = load_record_hotkey(&conn);
-                let hotkey = match canonicalize_hotkey(&saved_hotkey) {
-                    Ok(canonical) => canonical,
-                    Err(err) => {
-                        eprintln!(
-                            "[macros] saved record-toggle hotkey '{saved_hotkey}' is invalid ({err}); \
-                             falling back to {DEFAULT_RECORD_HOTKEY}"
-                        );
-                        commands::macros::DEFAULT_RECORD_HOTKEY.to_string()
-                    }
-                };
-
-                if hotkey != saved_hotkey {
-                    let _ = database::set_setting(
-                        &conn,
-                        RECORD_HOTKEY_SETTING_KEY,
-                        &hotkey,
+            let saved_hotkey =
+                commands::with_db_handle(&handle, |conn| Ok(load_record_hotkey(conn)))?;
+            let hotkey = match canonicalize_hotkey(&saved_hotkey) {
+                Ok(canonical) => canonical,
+                Err(err) => {
+                    eprintln!(
+                        "[macros] saved record-toggle hotkey '{saved_hotkey}' is invalid ({err}); \
+                         falling back to {DEFAULT_RECORD_HOTKEY}"
                     );
+                    commands::macros::DEFAULT_RECORD_HOTKEY.to_string()
                 }
+            };
 
-                if let Err(err) = handle.global_shortcut().register(hotkey.as_str()) {
-                    eprintln!("[macros] failed to register record-toggle hotkey '{hotkey}': {err}");
+            if hotkey != saved_hotkey {
+                if let Err(err) = commands::with_db_handle(&handle, |conn| {
+                    database::set_setting(conn, RECORD_HOTKEY_SETTING_KEY, &hotkey)
+                }) {
+                    eprintln!("[macros] failed to persist record-toggle hotkey '{hotkey}': {err}");
                 }
+            }
 
-                app.manage(RecordHotkeyState::new(hotkey));
+            if let Err(err) = handle.global_shortcut().register(hotkey.as_str()) {
+                eprintln!("[macros] failed to register record-toggle hotkey '{hotkey}': {err}");
+            }
 
-                // Re-register any per-macro playback hotkeys saved from a
-                // previous session.
-                if let Ok(pairs) = database::load_hotkey_map(&conn) {
-                    let registry = handle.state::<HotkeyRegistry>();
-                    for (hotkey, macro_id) in pairs {
-                        let hotkey = match canonicalize_hotkey(&hotkey) {
-                            Ok(canonical) => canonical,
-                            Err(err) => {
-                                eprintln!(
-                                    "[macros] skipping invalid saved macro hotkey '{hotkey}': {err}"
-                                );
-                                continue;
-                            }
-                        };
-                        match handle.global_shortcut().register(hotkey.as_str()) {
-                            Ok(_) => {
-                                registry.map.lock().unwrap().insert(hotkey, macro_id);
-                            }
-                            Err(err) => {
-                                eprintln!(
-                                    "[macros] failed to re-register hotkey '{hotkey}': {err}"
-                                );
-                            }
+            app.manage(RecordHotkeyState::new(hotkey));
+
+            // Re-register any per-macro playback hotkeys saved from a
+            // previous session.
+            if let Ok(pairs) = commands::with_db_handle(&handle, database::load_hotkey_map) {
+                let registry = handle.state::<HotkeyRegistry>();
+                for (hotkey, macro_id) in pairs {
+                    let hotkey = match canonicalize_hotkey(&hotkey) {
+                        Ok(canonical) => canonical,
+                        Err(err) => {
+                            eprintln!(
+                                "[macros] skipping invalid saved macro hotkey '{hotkey}': {err}"
+                            );
+                            continue;
+                        }
+                    };
+                    match handle.global_shortcut().register(hotkey.as_str()) {
+                        Ok(_) => {
+                            registry.map.lock().unwrap().insert(hotkey, macro_id);
+                        }
+                        Err(err) => {
+                            eprintln!("[macros] failed to re-register hotkey '{hotkey}': {err}");
                         }
                     }
                 }
-            } else {
-                // DB couldn't open at all -- still manage a default state
-                // so commands don't panic looking it up.
-                app.manage(RecordHotkeyState::new(
-                    commands::macros::DEFAULT_RECORD_HOTKEY.to_string(),
-                ));
             }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
