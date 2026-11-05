@@ -1,6 +1,7 @@
+use crate::commands::{with_db, with_db_handle};
 use crate::database::{
-    delete_clipboard_item, get_clipboard_history, init_database, insert_clipboard_item,
-    toggle_pin_item, ClipboardItem,
+    delete_clipboard_item, get_clipboard_history, insert_clipboard_item, toggle_pin_item,
+    ClipboardItem, DbState,
 };
 use crate::fragments::{Fragment, FragmentPayload, FRAGMENT_FORMAT_VERSION};
 use arboard::Clipboard;
@@ -108,12 +109,16 @@ pub fn start_clipboard_monitor(
                 if content != *last && !content.trim().is_empty() {
                     *last = content.clone();
 
-                    // Save to database
-                    if let Ok(conn) = init_database() {
-                        let _ = insert_clipboard_item(&conn, &content);
-
-                        // Emit event to frontend
-                        let _ = app_handle.emit("clipboard-updated", ());
+                    // Save through the shared connection rather than
+                    // opening a new one on every poll tick.
+                    match with_db_handle(&app_handle, |conn| insert_clipboard_item(conn, &content))
+                    {
+                        Ok(()) => {
+                            let _ = app_handle.emit("clipboard-updated", ());
+                        }
+                        Err(err) => {
+                            eprintln!("[clipboard] failed to save captured item: {err}");
+                        }
                     }
                 }
             }
@@ -155,17 +160,16 @@ pub fn get_clipboard_monitor_status(
 }
 
 #[tauri::command]
-pub fn get_clipboard_items(limit: i32) -> Result<Vec<ClipboardItem>, String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    let items = get_clipboard_history(&conn, limit).map_err(|e| e.to_string())?;
-    Ok(items)
+pub fn get_clipboard_items(
+    state: tauri::State<'_, DbState>,
+    limit: i32,
+) -> Result<Vec<ClipboardItem>, String> {
+    with_db(&state, |conn| get_clipboard_history(conn, limit))
 }
 
 #[tauri::command]
-pub fn save_clipboard_text(text: String) -> Result<(), String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    insert_clipboard_item(&conn, &text).map_err(|e| e.to_string())?;
-    Ok(())
+pub fn save_clipboard_text(state: tauri::State<'_, DbState>, text: String) -> Result<(), String> {
+    with_db(&state, |conn| insert_clipboard_item(conn, &text))
 }
 
 #[tauri::command]
@@ -176,17 +180,13 @@ pub fn get_current_clipboard() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn delete_clipboard(id: i32) -> Result<(), String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    delete_clipboard_item(&conn, id).map_err(|e| e.to_string())?;
-    Ok(())
+pub fn delete_clipboard(state: tauri::State<'_, DbState>, id: i32) -> Result<(), String> {
+    with_db(&state, |conn| delete_clipboard_item(conn, id))
 }
 
 #[tauri::command]
-pub fn toggle_pin(id: i32) -> Result<(), String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    toggle_pin_item(&conn, id).map_err(|e| e.to_string())?;
-    Ok(())
+pub fn toggle_pin(state: tauri::State<'_, DbState>, id: i32) -> Result<(), String> {
+    with_db(&state, |conn| toggle_pin_item(conn, id))
 }
 
 #[tauri::command]
@@ -225,7 +225,10 @@ pub fn export_clipboard_snippet_json(
 /// function `save_clipboard_text` calls) rather than going through
 /// another command.
 #[tauri::command]
-pub fn import_clipboard_snippet_json(json: String) -> Result<(), String> {
+pub fn import_clipboard_snippet_json(
+    state: tauri::State<'_, DbState>,
+    json: String,
+) -> Result<(), String> {
     let fragment: Fragment =
         serde_json::from_str(&json).map_err(|e| format!("Couldn't parse fragment file: {e}"))?;
 
@@ -240,7 +243,5 @@ pub fn import_clipboard_snippet_json(json: String) -> Result<(), String> {
         return Err("This fragment isn't a clipboard snippet".to_string());
     };
 
-    let conn = init_database().map_err(|e| e.to_string())?;
-    insert_clipboard_item(&conn, &content).map_err(|e| e.to_string())?;
-    Ok(())
+    with_db(&state, |conn| insert_clipboard_item(conn, &content))
 }
