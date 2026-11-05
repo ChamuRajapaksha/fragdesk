@@ -29,8 +29,53 @@ fn db_open_error(message: impl Into<String>) -> rusqlite::Error {
     )
 }
 
+fn schema_error(message: impl Into<String>) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+        Some(message.into()),
+    )
+}
+
+/// Schema version tracked in `PRAGMA user_version`. Bump this and append a
+/// migration whenever the schema changes.
+const SCHEMA_VERSION: i64 = 1;
+
+type Migration = fn(&Connection) -> Result<()>;
+
+const MIGRATIONS: &[Migration] = &[migration_001_initial_schema];
+
 fn initialize_schema(conn: &Connection) -> Result<()> {
-    conn.execute(
+    let current: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+
+    if current > SCHEMA_VERSION {
+        return Err(schema_error(format!(
+            "database schema version {current} is newer than the supported version {SCHEMA_VERSION}"
+        )));
+    }
+
+    for (index, migration) in MIGRATIONS.iter().enumerate() {
+        let target = index as i64 + 1;
+        if current >= target {
+            continue;
+        }
+
+        let tx = conn.unchecked_transaction()?;
+        migration(&tx)?;
+        tx.pragma_update(None, "user_version", target)?;
+        tx.commit()?;
+    }
+
+    normalize_stored_hotkeys(conn)?;
+
+    Ok(())
+}
+
+/// Creates every table, index, and column that existed before migrations
+/// were versioned. `CREATE ... IF NOT EXISTS` plus explicit column checks
+/// keep this safe for databases created by older builds, which report
+/// `user_version = 0` even though their schema is already partially current.
+fn migration_001_initial_schema(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS monitor_alert_rules (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -40,74 +85,63 @@ fn initialize_schema(conn: &Connection) -> Result<()> {
             enabled INTEGER NOT NULL DEFAULT 1,
             source TEXT,
             created_at INTEGER NOT NULL
-        )",
-        [],
-    )?;
+        );
 
-    // Create clipboard_history table
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS clipboard_history (
+        CREATE TABLE IF NOT EXISTS clipboard_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             content TEXT NOT NULL,
             content_type TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
             is_pinned BOOLEAN DEFAULT 0
-        )",
-        [],
-    )?;
+        );
 
-    // Create index for faster queries
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_timestamp ON clipboard_history(timestamp DESC)",
-        [],
-    )?;
+        CREATE INDEX IF NOT EXISTS idx_timestamp ON clipboard_history(timestamp DESC);
 
-    // Create macros table
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS macros (
+        CREATE TABLE IF NOT EXISTS macros (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             created_at INTEGER NOT NULL,
             event_count INTEGER NOT NULL,
             duration_ms INTEGER NOT NULL,
             events_json TEXT NOT NULL
-        )",
-        [],
-    )?;
+        );
 
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_macros_created_at ON macros(created_at DESC)",
-        [],
-    )?;
+        CREATE INDEX IF NOT EXISTS idx_macros_created_at ON macros(created_at DESC);
 
-    // Migration: add hotkey column if it doesn't exist yet (older DBs won't
-    // have it). SQLite has no "ADD COLUMN IF NOT EXISTS", so we just ignore
-    // the error if the column is already there.
-    let _ = conn.execute("ALTER TABLE macros ADD COLUMN hotkey TEXT", []);
-
-    // Migration: add tags column (JSON array of strings, e.g. '["Combat","Utility"]').
-    // NULL/missing is treated identically to an empty array everywhere this
-    // is read, so existing macros don't need backfilling.
-    let _ = conn.execute("ALTER TABLE macros ADD COLUMN tags TEXT", []);
-
-    // Migration: add source column (NULL = recorded locally, "community",
-    // or "starter"). Used only for UI badging so a downloaded macro is
-    // never visually indistinguishable from one you recorded yourself.
-    let _ = conn.execute("ALTER TABLE macros ADD COLUMN source TEXT", []);
-
-    // Generic key-value settings store. Currently used for the
-    // record-toggle hotkey, but kept general so future app-wide
-    // preferences don't each need their own table.
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS settings (
+        CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
-        )",
-        [],
+        );",
     )?;
 
-    normalize_stored_hotkeys(conn)?;
+    ensure_column(conn, "macros", "hotkey", "TEXT")?;
+    ensure_column(conn, "macros", "tags", "TEXT")?;
+    ensure_column(conn, "macros", "source", "TEXT")?;
 
+    Ok(())
+}
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn ensure_column(conn: &Connection, table: &str, column: &str, declaration: &str) -> Result<()> {
+    if column_exists(conn, table, column)? {
+        return Ok(());
+    }
+
+    conn.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {declaration}"),
+        [],
+    )?;
     Ok(())
 }
 
@@ -643,5 +677,63 @@ mod connection_tests {
             .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
             .unwrap();
         assert_eq!(busy_timeout, 5_000);
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+
+    fn user_version(conn: &Connection) -> i64 {
+        conn.pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn migrations_are_idempotent_and_record_the_version() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        initialize_schema(&conn).unwrap();
+        assert_eq!(user_version(&conn), SCHEMA_VERSION);
+        assert!(column_exists(&conn, "macros", "hotkey").unwrap());
+        assert!(column_exists(&conn, "macros", "tags").unwrap());
+        assert!(column_exists(&conn, "macros", "source").unwrap());
+
+        initialize_schema(&conn).unwrap();
+        assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn upgrades_a_legacy_schema_that_has_no_version_marker() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE macros (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                event_count INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                events_json TEXT NOT NULL
+            );",
+        )
+        .unwrap();
+
+        assert_eq!(user_version(&conn), 0);
+
+        initialize_schema(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), SCHEMA_VERSION);
+        assert!(column_exists(&conn, "macros", "hotkey").unwrap());
+        assert!(column_exists(&conn, "macros", "tags").unwrap());
+        assert!(column_exists(&conn, "macros", "source").unwrap());
+    }
+
+    #[test]
+    fn rejects_a_database_from_a_newer_schema_version() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+            .unwrap();
+
+        assert!(initialize_schema(&conn).is_err());
     }
 }
