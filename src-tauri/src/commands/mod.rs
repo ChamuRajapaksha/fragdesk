@@ -14,6 +14,15 @@ use crate::database::DbState;
 use rusqlite::Connection;
 use tauri::{AppHandle, Manager};
 
+/// Runs a closure against the shared database connection for commands that
+/// receive the managed state directly.
+pub fn with_db<T>(
+    state: &tauri::State<'_, DbState>,
+    f: impl FnOnce(&Connection) -> rusqlite::Result<T>,
+) -> Result<T, String> {
+    state.with(f).map_err(|e| e.to_string())
+}
+
 /// Runs a closure against the shared database connection from a call site
 /// (global-shortcut handler, background worker, setup) that only has an
 /// `AppHandle`, converting errors to the `String` shape commands return.
