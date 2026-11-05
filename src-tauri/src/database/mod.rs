@@ -1,12 +1,32 @@
 use crate::hotkey::canonicalize_hotkey;
 use rusqlite::{Connection, Result};
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub fn init_database() -> Result<Connection> {
-    let db_path = get_db_path();
+    let db_path = get_db_path()?;
     let conn = Connection::open(db_path)?;
+    configure_connection(&conn)?;
     initialize_schema(&conn)?;
     Ok(conn)
+}
+
+/// Applies the connection-level PRAGMAs every command relies on. WAL lets
+/// readers and the background clipboard worker coexist without blocking
+/// each other, the busy timeout gives brief write contention a chance to
+/// settle, and foreign keys are enabled for future schema additions.
+fn configure_connection(conn: &Connection) -> Result<()> {
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    conn.busy_timeout(Duration::from_secs(5))?;
+    Ok(())
+}
+
+fn db_open_error(message: impl Into<String>) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+        Some(message.into()),
+    )
 }
 
 fn initialize_schema(conn: &Connection) -> Result<()> {
@@ -166,12 +186,18 @@ pub fn wipe_all_data(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn get_db_path() -> PathBuf {
-    let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+fn get_db_path() -> Result<PathBuf> {
+    let mut path = dirs::data_local_dir()
+        .ok_or_else(|| db_open_error("could not resolve the platform local data directory"))?;
     path.push("FragDesk");
-    std::fs::create_dir_all(&path).ok();
+    std::fs::create_dir_all(&path).map_err(|err| {
+        db_open_error(format!(
+            "could not create the FragDesk data directory at {}: {err}",
+            path.display()
+        ))
+    })?;
     path.push("fragdesk.db");
-    path
+    Ok(path)
 }
 
 pub fn insert_clipboard_item(conn: &Connection, content: &str) -> Result<()> {
@@ -596,5 +622,26 @@ mod hotkey_normalization_tests {
         // The persisted value is already in the exact form the shortcut
         // handler receives from the plugin when the key fires.
         assert_eq!(canonicalize_hotkey(&stored[0].0).unwrap(), stored[0].0);
+    }
+}
+
+#[cfg(test)]
+mod connection_tests {
+    use super::*;
+
+    #[test]
+    fn configures_concurrency_pragmas() {
+        let conn = Connection::open_in_memory().unwrap();
+        configure_connection(&conn).unwrap();
+
+        let foreign_keys: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(foreign_keys, 1);
+
+        let busy_timeout: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(busy_timeout, 5_000);
     }
 }
