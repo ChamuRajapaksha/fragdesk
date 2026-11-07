@@ -15,7 +15,9 @@ import {
   formatDuration,
   type MacroSummary,
   type PlaybackProgress,
+  type PlaybackStatus,
   type RecordingPreview,
+  type RecordingStatus,
 } from "./macroTypes";
 import type { NavId } from "../../../features/registry";
 import { Button, EmptyState, ErrorBanner, LoadingState, PageHeader, useToast } from "../../ui";
@@ -99,6 +101,28 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
       .catch(() => {});
     invoke<boolean>("check_recording_permission")
       .then(setHasPermission)
+      .catch(() => {});
+
+    // Restore state that may have changed while this page was unmounted
+    // (recording started from the Dashboard, a playback still running,
+    // or a capture stopped via the global hotkey).
+    invoke<RecordingStatus>("get_recording_status")
+      .then((status) => {
+        setIsRecording(status.is_recording);
+        setLiveCount(status.event_count);
+        if (!status.is_recording && status.event_count > 0) {
+          setPendingPreview({
+            event_count: status.event_count,
+            duration_ms: status.duration_ms,
+          });
+        }
+      })
+      .catch(() => {});
+
+    invoke<PlaybackStatus>("get_playback_status")
+      .then((status) => {
+        if (status.is_playing) setPlayingId(status.macro_id);
+      })
       .catch(() => {});
 
     const unlistenRecording = listen<{ event_count: number }>("macro-recording-progress", (e) =>

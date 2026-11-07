@@ -14,6 +14,17 @@ export interface RecordingPreview {
   duration_ms: number;
 }
 
+export interface RecordingStatus {
+  is_recording: boolean;
+  event_count: number;
+  duration_ms: number;
+}
+
+export interface PlaybackStatus {
+  is_playing: boolean;
+  macro_id: string | null;
+}
+
 export interface PlaybackProgress {
   macro_id: string;
   current_index: number;

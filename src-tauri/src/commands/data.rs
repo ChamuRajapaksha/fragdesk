@@ -25,10 +25,11 @@ pub fn wipe_local_data(app_handle: AppHandle) -> Result<(), String> {
         recorder.buffer.lock().unwrap().clear();
         *recorder.last_event_at.lock().unwrap() = None;
     }
-    app_handle
-        .state::<MacroPlayback>()
-        .cancel
-        .store(true, Ordering::SeqCst);
+    {
+        let playback = app_handle.state::<MacroPlayback>();
+        playback.cancel.store(true, Ordering::SeqCst);
+        *playback.current_macro_id.lock().unwrap() = None;
+    }
 
     // Forget every macro hotkey and drop the OS registrations.
     app_handle

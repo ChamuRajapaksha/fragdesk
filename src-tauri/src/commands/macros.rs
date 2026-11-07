@@ -47,6 +47,9 @@ impl MacroRecorder {
 pub struct MacroPlayback {
     pub is_playing: Arc<AtomicBool>,
     pub cancel: Arc<AtomicBool>,
+    /// Which macro the current (or most recent) playback run belongs to.
+    /// Lets the UI restore its "playing" highlight after navigation.
+    pub current_macro_id: Arc<Mutex<Option<String>>>,
 }
 
 impl MacroPlayback {
@@ -54,6 +57,7 @@ impl MacroPlayback {
         Self {
             is_playing: Arc::new(AtomicBool::new(false)),
             cancel: Arc::new(AtomicBool::new(false)),
+            current_macro_id: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -116,6 +120,43 @@ impl RecordHotkeyState {
 #[tauri::command]
 pub fn get_record_hotkey(state: tauri::State<'_, RecordHotkeyState>) -> String {
     state.current.lock().unwrap().clone()
+}
+
+/// Current recorder state, including a stopped-but-unsaved capture. The UI
+/// queries this on mount so navigating away mid-recording does not hide it.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecordingStatus {
+    pub is_recording: bool,
+    pub event_count: usize,
+    pub duration_ms: u64,
+}
+
+#[tauri::command]
+pub fn get_recording_status(state: tauri::State<'_, MacroRecorder>) -> RecordingStatus {
+    let is_recording = state.is_recording.load(Ordering::SeqCst);
+    let buffer = state.buffer.lock().unwrap();
+
+    RecordingStatus {
+        is_recording,
+        event_count: buffer.len(),
+        duration_ms: buffer.iter().map(event_delay_ms).sum(),
+    }
+}
+
+/// Current playback state and target macro. Queried on mount so a playback
+/// started before navigating away is still reflected in the UI.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlaybackStatus {
+    pub is_playing: bool,
+    pub macro_id: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_playback_status(state: tauri::State<'_, MacroPlayback>) -> PlaybackStatus {
+    PlaybackStatus {
+        is_playing: state.is_playing.load(Ordering::SeqCst),
+        macro_id: state.current_macro_id.lock().unwrap().clone(),
+    }
 }
 
 /// Remaps the record-toggle hotkey. Rejects the change if the requested
@@ -602,6 +643,7 @@ pub fn play_macro(
         app_handle,
         state.is_playing.clone(),
         state.cancel.clone(),
+        state.current_macro_id.clone(),
         macro_item,
         speed.unwrap_or(1.0),
         repeat.unwrap_or(1),
@@ -659,6 +701,7 @@ pub fn handle_global_shortcut(app_handle: &AppHandle, shortcut_str: &str) {
         app_handle.clone(),
         playback.is_playing.clone(),
         playback.cancel.clone(),
+        playback.current_macro_id.clone(),
         macro_item,
         1.0,
         1,
@@ -712,12 +755,14 @@ fn start_playback(
     app_handle: AppHandle,
     is_playing: Arc<AtomicBool>,
     cancel: Arc<AtomicBool>,
+    current_macro_id: Arc<Mutex<Option<String>>>,
     macro_item: MacroItem,
     speed: f64,
     repeat: i32,
 ) {
     cancel.store(false, Ordering::SeqCst);
     is_playing.store(true, Ordering::SeqCst);
+    *current_macro_id.lock().unwrap() = Some(macro_item.id.clone());
 
     let speed = if speed <= 0.0 { 1.0 } else { speed };
     let repeat = repeat.max(1);
@@ -757,6 +802,12 @@ fn start_playback(
             }
         }
 
+        {
+            let mut current = current_macro_id.lock().unwrap();
+            if current.as_deref() == Some(macro_item.id.as_str()) {
+                *current = None;
+            }
+        }
         is_playing.store(false, Ordering::SeqCst);
         let _ = app_handle.emit(
             "macro-playback-finished",

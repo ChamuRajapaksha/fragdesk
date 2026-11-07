@@ -16,12 +16,13 @@ use commands::clipboard::{
     ClipboardMonitor,
 };
 use commands::macros::{
-    delete_macro, discard_macro_recording, export_macro_json, get_macros, get_record_hotkey,
-    handle_global_shortcut, import_bundled_fragment, import_macro_json, list_bundled_fragments,
-    load_record_hotkey, play_macro, rename_macro, save_macro_recording, set_macro_hotkey,
-    set_macro_tags, set_record_hotkey, start_macro_recording, stop_macro_playback,
-    stop_macro_recording, HotkeyRegistry, MacroPlayback, MacroRecorder, RecordHotkeyState,
-    DEFAULT_RECORD_HOTKEY, RECORD_HOTKEY_SETTING_KEY,
+    delete_macro, discard_macro_recording, export_macro_json, get_macros, get_playback_status,
+    get_record_hotkey, get_recording_status, handle_global_shortcut, import_bundled_fragment,
+    import_macro_json, list_bundled_fragments, load_record_hotkey, play_macro, rename_macro,
+    save_macro_recording, set_macro_hotkey, set_macro_tags, set_record_hotkey,
+    start_macro_recording, stop_macro_playback, stop_macro_recording, HotkeyRegistry,
+    MacroPlayback, MacroRecorder, RecordHotkeyState, DEFAULT_RECORD_HOTKEY,
+    RECORD_HOTKEY_SETTING_KEY,
 };
 
 use commands::monitor_layout::{
@@ -156,6 +157,8 @@ pub fn run() {
             rename_macro,
             play_macro,
             stop_macro_playback,
+            get_recording_status,
+            get_playback_status,
             set_macro_hotkey,
             get_record_hotkey,
             set_record_hotkey,
