@@ -5,7 +5,7 @@ import "./App.css";
 import MainLayout from "./components/layout/MainLayout";
 import CommandPalette from "./components/features/command/CommandPalette";
 import OnboardingTour from "./components/features/onboarding/OnboardingTour";
-import { ToastProvider } from "./components/ui";
+import { ErrorBoundary, ToastProvider } from "./components/ui";
 import { FEATURES, type NavId } from "./features/registry";
 
 function App() {
@@ -25,7 +25,9 @@ function App() {
   return (
     <ToastProvider>
       <MainLayout activeTab={activeTab} setActiveTab={setActiveTab}>
-        <Page setActiveTab={setActiveTab} />
+        <ErrorBoundary key={activeTab}>
+          <Page setActiveTab={setActiveTab} />
+        </ErrorBoundary>
       </MainLayout>
       <CommandPalette setActiveTab={setActiveTab} />
       <OnboardingTour />
