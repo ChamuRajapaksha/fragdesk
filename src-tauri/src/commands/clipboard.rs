@@ -134,17 +134,22 @@ pub fn start_clipboard_monitor(
     Ok("Monitoring started".to_string())
 }
 
-#[tauri::command]
-pub fn stop_clipboard_monitor(state: tauri::State<'_, ClipboardMonitor>) -> Result<String, String> {
-    *state.is_running.lock().unwrap() = false;
-    state.stop_signal.notify_all();
+/// Stops the worker and waits for it to exit. Shared by the stop command
+/// and the factory-reset flow so both paths use the same shutdown logic.
+pub fn shutdown(monitor: &ClipboardMonitor) {
+    *monitor.is_running.lock().unwrap() = false;
+    monitor.stop_signal.notify_all();
 
     // Join so a subsequent start cannot race with this worker. The condvar
     // makes this near-immediate rather than up to 500 ms.
-    if let Some(handle) = state.worker.lock().unwrap().take() {
+    if let Some(handle) = monitor.worker.lock().unwrap().take() {
         let _ = handle.join();
     }
+}
 
+#[tauri::command]
+pub fn stop_clipboard_monitor(state: tauri::State<'_, ClipboardMonitor>) -> Result<String, String> {
+    shutdown(&state);
     Ok("Monitoring stopped".to_string())
 }
 

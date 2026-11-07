@@ -90,6 +90,14 @@ pub fn set_fps_tracking_target(
     Ok(())
 }
 
+/// Clears the tracking target and all collected samples, leaving the poller
+/// idle. Used by the factory-reset flow to stop sampling immediately.
+pub fn clear_tracking(state: &FpsMonitorState) {
+    *state.target_pid.lock().unwrap() = None;
+    state.samples.lock().unwrap().clear();
+    *state.last_seen_frames.lock().unwrap() = None;
+}
+
 #[tauri::command]
 pub fn get_fps_stats(state: tauri::State<'_, FpsMonitorState>) -> Result<Option<FpsStats>, String> {
     if state.target_pid.lock().unwrap().is_none() {

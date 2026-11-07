@@ -236,6 +236,7 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
 /// monitor alert rules) and clears the `settings` store -- the record
 /// hotkey, UI theme, and onboarding-completed flag all reset to their
 /// first-run defaults along with user data. A true factory reset.
+#[allow(dead_code)] // wired into the wipe command in the next commit
 pub fn wipe_all_data(conn: &Connection) -> Result<()> {
     conn.execute("DELETE FROM macros", [])?;
     conn.execute("DELETE FROM clipboard_history", [])?;
