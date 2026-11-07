@@ -236,12 +236,32 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
 /// monitor alert rules) and clears the `settings` store -- the record
 /// hotkey, UI theme, and onboarding-completed flag all reset to their
 /// first-run defaults along with user data. A true factory reset.
-#[allow(dead_code)] // wired into the wipe command in the next commit
+///
+/// The deletes run in one transaction so a failure cannot leave a partial
+/// reset. `secure_delete` plus `VACUUM` overwrite freed pages instead of
+/// merely marking them reusable, and the WAL is checkpointed so deleted
+/// rows do not linger in the sidecar file. The database file itself is not
+/// deleted: Windows keeps it locked while the managed connection is open,
+/// and reopening would require tearing down `DbState`.
 pub fn wipe_all_data(conn: &Connection) -> Result<()> {
-    conn.execute("DELETE FROM macros", [])?;
-    conn.execute("DELETE FROM clipboard_history", [])?;
-    conn.execute("DELETE FROM monitor_alert_rules", [])?;
-    conn.execute("DELETE FROM settings", [])?;
+    conn.pragma_update(None, "secure_delete", "ON")?;
+
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM macros", [])?;
+    tx.execute("DELETE FROM clipboard_history", [])?;
+    tx.execute("DELETE FROM monitor_alert_rules", [])?;
+    tx.execute("DELETE FROM settings", [])?;
+    tx.execute(
+        "DELETE FROM sqlite_sequence WHERE name = 'clipboard_history'",
+        [],
+    )?;
+    tx.commit()?;
+
+    // These must run outside the transaction. VACUUM rewrites the file so
+    // deleted content is not left recoverable; the checkpoint folds the WAL
+    // back into the main database.
+    conn.execute_batch("VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")?;
+
     Ok(())
 }
 
@@ -760,5 +780,75 @@ mod migration_tests {
             .unwrap();
 
         assert!(initialize_schema(&conn).is_err());
+    }
+}
+
+#[cfg(test)]
+mod wipe_tests {
+    use super::*;
+
+    fn count_rows(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn wipe_empties_every_table_and_resets_the_id_sequence() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        set_setting(&conn, "ui_theme", "neon").unwrap();
+        insert_clipboard_item(&conn, "hello").unwrap();
+        insert_macro(&conn, "m1", "Macro", &[], 0).unwrap();
+        insert_alert_rule(&conn, "a1", "Alert", "cpu", "above", 90.0, None).unwrap();
+
+        let seq: i64 = conn
+            .query_row(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'clipboard_history'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(seq, 1);
+
+        wipe_all_data(&conn).unwrap();
+
+        for table in [
+            "macros",
+            "clipboard_history",
+            "monitor_alert_rules",
+            "settings",
+        ] {
+            assert_eq!(count_rows(&conn, table), 0, "{table} should be empty");
+        }
+
+        let seq_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_sequence WHERE name = 'clipboard_history'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(seq_rows, 0, "clipboard id sequence should reset");
+
+        // The next clipboard row starts at id 1 again.
+        insert_clipboard_item(&conn, "again").unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM clipboard_history", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(id, 1);
+    }
+
+    #[test]
+    fn wipe_is_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        wipe_all_data(&conn).unwrap();
+        wipe_all_data(&conn).unwrap();
+
+        assert_eq!(count_rows(&conn, "settings"), 0);
     }
 }
