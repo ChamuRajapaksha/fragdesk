@@ -14,6 +14,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { Badge, Button, StatCard, useToast } from "../ui";
+import { useDataWiped } from "../../features/dataEvents";
 import {
   FEATURES_BY_GROUP,
   featureMode,
@@ -123,7 +124,16 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
     cpuUsage: null,
   });
   const [statsLoading, setStatsLoading] = useState(true);
+  const [reloadToken, setReloadToken] = useState(0);
   const pendingRef = useRef(0);
+
+  useDataWiped(
+    useCallback(() => {
+      setStats({ clipCount: null, macroCount: null, cpuUsage: null });
+      setStatsLoading(true);
+      setReloadToken((value) => value + 1);
+    }, []),
+  );
 
   const sections = useMemo(
     () => FEATURES_BY_GROUP.filter((section) => FEATURE_GROUPS.has(section.group)),
@@ -161,6 +171,9 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
     // Each stat fetched independently so one broken/unconfigured feature
     // (e.g. clipboard monitor never started) doesn't blank out the others
     // -- a failure just leaves that card showing "--".
+    pendingRef.current = 0;
+    setStatsLoading(true);
+
     const settle = () => {
       pendingRef.current += 1;
       if (pendingRef.current >= 3) setStatsLoading(false);
@@ -183,7 +196,7 @@ export default function DashboardHome({ setActiveTab }: DashboardHomeProps) {
       })
       .catch(() => setStats((s) => ({ ...s, cpuUsage: null })))
       .finally(settle);
-  }, []);
+  }, [reloadToken]);
 
   const clips = stats.clipCount ?? 0;
   const macros = stats.macroCount ?? 0;

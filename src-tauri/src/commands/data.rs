@@ -6,7 +6,7 @@ use crate::commands::macros::{
 use crate::commands::with_db_handle;
 use crate::database::wipe_all_data;
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 /// Factory reset. First stops everything that could keep writing to the
@@ -55,6 +55,10 @@ pub fn wipe_local_data(app_handle: AppHandle) -> Result<(), String> {
     // Every worker is stopped, so no new rows can appear while the tables
     // are being emptied.
     with_db_handle(&app_handle, wipe_all_data)?;
+
+    // Let every mounted page reset what it is showing. The Settings page
+    // uses this to drop back to the default palette and record hotkey.
+    let _ = app_handle.emit("data-wiped", ());
 
     Ok(())
 }

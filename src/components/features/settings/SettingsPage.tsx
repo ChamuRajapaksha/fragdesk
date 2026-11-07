@@ -1,8 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Settings } from "lucide-react";
-import { applyPalette, PALETTES, type Palette } from "../../../themes";
+import {
+  applyPalette,
+  applyPaletteById,
+  DEFAULT_PALETTE_ID,
+  PALETTES,
+  type Palette,
+} from "../../../themes";
 import { comboFromKeyboardEvent } from "../../../features/hotkeys";
+import { useDataWiped } from "../../../features/dataEvents";
 import { PageHeader, useToast } from "../../../components/ui";
 import type { NavId } from "../../../features/registry";
 import AccountSection from "./AccountSection";
@@ -50,10 +57,16 @@ export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
       .catch((err) => toast(String(err), "error"));
   }
 
-  function handleAccountDeleted() {
-    setPaletteId("neon");
+  const handleDataWiped = useCallback(() => {
+    applyPaletteById(DEFAULT_PALETTE_ID);
+    setPaletteId(DEFAULT_PALETTE_ID);
     setRecordHotkey("F9");
-  }
+    setError(null);
+    setIsCapturing(false);
+    toast("Account and local data deleted.", "success");
+  }, [toast]);
+
+  useDataWiped(handleDataWiped);
 
   useEffect(() => {
     if (!isCapturing) return;
@@ -193,7 +206,7 @@ export default function SettingsPage({ setActiveTab }: SettingsPageProps) {
         </section>
 
         {/* Account */}
-        <AccountSection setActiveTab={setActiveTab} onAccountDeleted={handleAccountDeleted} />
+        <AccountSection setActiveTab={setActiveTab} />
 
         {/* About */}
         <section className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6 space-y-2">

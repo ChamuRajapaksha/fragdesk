@@ -8,12 +8,10 @@ import {
 } from "../../../community/supabaseClient";
 import { useAuth } from "../../../community/useAuth";
 import { useToast } from "../../ui";
-import { applyPaletteById, DEFAULT_PALETTE_ID } from "../../../themes";
 import type { NavId } from "../../../features/registry";
 
 interface AccountSectionProps {
   setActiveTab?: (tab: NavId) => void;
-  onAccountDeleted?: () => void;
 }
 
 function PasswordInput({
@@ -97,7 +95,7 @@ function PasswordInput({
   );
 }
 
-export default function AccountSection({ setActiveTab, onAccountDeleted }: AccountSectionProps) {
+export default function AccountSection({ setActiveTab }: AccountSectionProps) {
   const { user, loading, signOut } = useAuth();
   const { toast } = useToast();
 
@@ -153,10 +151,6 @@ export default function AccountSection({ setActiveTab, onAccountDeleted }: Accou
       } catch {
         // ignore
       }
-
-      applyPaletteById(DEFAULT_PALETTE_ID);
-      onAccountDeleted?.();
-      toast("Account and data deleted", "success");
     } catch (err) {
       toast(extractErrorMessage(err), "error");
     } finally {

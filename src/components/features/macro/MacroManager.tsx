@@ -9,6 +9,7 @@ import {
 } from "../../../community/supabaseClient";
 import { useAuth } from "../../../community/useAuth";
 import { comboFromKeyboardEvent } from "../../../features/hotkeys";
+import { useDataWiped } from "../../../features/dataEvents";
 import MacroCard from "./MacroCard";
 import {
   formatDuration,
@@ -212,6 +213,22 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
       setIsLoading(false);
     }
   }, []);
+
+  useDataWiped(
+    useCallback(() => {
+      setMacros([]);
+      setIsRecording(false);
+      setLiveCount(0);
+      setPendingPreview(null);
+      setMacroName("");
+      setPlayingId(null);
+      setProgress(null);
+      setError(null);
+      setSharedIds(new Set());
+      setActiveTagFilters([]);
+      void refreshMacros();
+    }, [refreshMacros]),
+  );
 
   const handleStartRecording = useCallback(async () => {
     setError(null);

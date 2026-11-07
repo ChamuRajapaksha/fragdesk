@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   XAxis,
@@ -30,6 +30,7 @@ import {
   supabase,
 } from "../../../community/supabaseClient";
 import { useAuth } from "../../../community/useAuth";
+import { useDataWiped } from "../../../features/dataEvents";
 import { Button, ErrorBanner, LoadingState, PageHeader, StatCard } from "../../ui";
 import type { NavId } from "../../../features/registry";
 
@@ -217,11 +218,31 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   // GPU utilization / VRAM
   const [gpuStats, setGpuStats] = useState<GpuStats | null>(null);
 
+  // Bumping this re-runs the initial load effect after a factory reset.
+  const [reloadToken, setReloadToken] = useState(0);
+
   const triggeredRef = useRef<Set<string>>(new Set());
   const rulesRef = useRef<AlertRule[]>([]);
   // Mirror of gpuStats that the 1s polling closure can read without
   // stale-state issues (the interval captures the first render's state).
   const gpuStatsRef = useRef<GpuStats | null>(null);
+
+  useDataWiped(
+    useCallback(() => {
+      setSelectedPid(null);
+      setSelectedName(null);
+      setFpsStats(null);
+      setRules([]);
+      setLayout([]);
+      setHistory([]);
+      setFiredAlerts([]);
+      setSharedRuleIds(new Set());
+      setLayoutShared(false);
+      setShowAppPicker(false);
+      setError(null);
+      setReloadToken((value) => value + 1);
+    }, []),
+  );
 
   useEffect(() => {
     loadStats();
@@ -239,7 +260,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       clearInterval(interval);
       setIsMonitoring(false);
     };
-  }, []);
+  }, [reloadToken]);
 
   useEffect(() => {
     rulesRef.current = rules;

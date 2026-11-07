@@ -10,6 +10,7 @@ import {
   supabase,
 } from "../../../community/supabaseClient";
 import { useAuth } from "../../../community/useAuth";
+import { useDataWiped } from "../../../features/dataEvents";
 import type { NavId } from "../../../features/registry";
 import ClipboardItemRow, { type ClipboardItem } from "./ClipboardItemRow";
 
@@ -97,6 +98,20 @@ export default function ClipboardHistory({ setActiveTab }: ClipboardHistoryProps
       setIsLoading(false);
     }
   }, []);
+
+  useDataWiped(
+    useCallback(() => {
+      setItems([]);
+      setSharedIds(new Set());
+      setSharingItemId(null);
+      setShareNameDraft("");
+      setConfirmDeleteId(null);
+      setSearchQuery("");
+      setError(null);
+      void refreshMonitorStatus();
+      void loadClipboardHistory();
+    }, [loadClipboardHistory, refreshMonitorStatus]),
+  );
 
   const toggleMonitoring = useCallback(async () => {
     try {
