@@ -86,6 +86,11 @@ interface FpsStats {
   sample_count: number;
 }
 
+interface FpsTrackingStatus {
+  process_id: number | null;
+  process_name: string | null;
+}
+
 interface GpuStats {
   name: string;
   usage_percent: number;
@@ -249,6 +254,13 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     loadRules();
     loadLayout();
 
+    invoke<FpsTrackingStatus>("get_fps_tracking_status")
+      .then((status) => {
+        setSelectedPid(status.process_id);
+        setSelectedName(status.process_name);
+      })
+      .catch(() => {});
+
     setIsMonitoring(true);
     const interval = setInterval(() => {
       loadStats();
@@ -334,7 +346,10 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   async function handleSelectApp(app: RtssAppSummary) {
     try {
-      await invoke("set_fps_tracking_target", { processId: app.process_id });
+      await invoke("set_fps_tracking_target", {
+        processId: app.process_id,
+        processName: app.name,
+      });
       setSelectedPid(app.process_id);
       setSelectedName(app.name);
       setShowAppPicker(false);
@@ -346,7 +361,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   async function handleStopTracking() {
     try {
-      await invoke("set_fps_tracking_target", { processId: null });
+      await invoke("set_fps_tracking_target", { processId: null, processName: null });
       setSelectedPid(null);
       setSelectedName(null);
       setFpsStats(null);

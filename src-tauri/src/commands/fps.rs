@@ -21,6 +21,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(4);
 
 pub struct FpsMonitorState {
     target_pid: Arc<Mutex<Option<u32>>>,
+    target_name: Arc<Mutex<Option<String>>>,
     samples: Arc<Mutex<VecDeque<u32>>>,
     last_seen_frames: Arc<Mutex<Option<u32>>>,
     poller_spawned: Arc<AtomicBool>,
@@ -30,6 +31,7 @@ impl FpsMonitorState {
     pub fn new() -> Self {
         Self {
             target_pid: Arc::new(Mutex::new(None)),
+            target_name: Arc::new(Mutex::new(None)),
             samples: Arc::new(Mutex::new(VecDeque::new())),
             last_seen_frames: Arc::new(Mutex::new(None)),
             poller_spawned: Arc::new(AtomicBool::new(false)),
@@ -51,6 +53,14 @@ pub struct FpsStats {
     pub sample_count: usize,
 }
 
+/// Current tracking target, so the UI can restore its selection after
+/// navigating away from the monitor page.
+#[derive(Debug, Clone, Serialize)]
+pub struct FpsTrackingStatus {
+    pub process_id: Option<u32>,
+    pub process_name: Option<String>,
+}
+
 /// One-shot list of apps RTSS currently has hooked, for the user to
 /// pick a tracking target from. Doesn't touch the polling state at all.
 #[tauri::command]
@@ -69,8 +79,10 @@ pub fn list_rtss_apps() -> Result<Vec<RtssAppSummary>, String> {
 pub fn set_fps_tracking_target(
     state: tauri::State<'_, FpsMonitorState>,
     process_id: Option<u32>,
+    process_name: Option<String>,
 ) -> Result<(), String> {
     *state.target_pid.lock().unwrap() = process_id;
+    *state.target_name.lock().unwrap() = process_name;
     state.samples.lock().unwrap().clear();
     *state.last_seen_frames.lock().unwrap() = None;
 
@@ -90,10 +102,19 @@ pub fn set_fps_tracking_target(
     Ok(())
 }
 
+#[tauri::command]
+pub fn get_fps_tracking_status(state: tauri::State<'_, FpsMonitorState>) -> FpsTrackingStatus {
+    FpsTrackingStatus {
+        process_id: *state.target_pid.lock().unwrap(),
+        process_name: state.target_name.lock().unwrap().clone(),
+    }
+}
+
 /// Clears the tracking target and all collected samples, leaving the poller
 /// idle. Used by the factory-reset flow to stop sampling immediately.
 pub fn clear_tracking(state: &FpsMonitorState) {
     *state.target_pid.lock().unwrap() = None;
+    *state.target_name.lock().unwrap() = None;
     state.samples.lock().unwrap().clear();
     *state.last_seen_frames.lock().unwrap() = None;
 }

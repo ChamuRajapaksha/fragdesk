@@ -35,7 +35,10 @@ use commands::theme::{get_ui_theme, set_ui_theme};
 
 use commands::data::wipe_local_data;
 
-use commands::fps::{get_fps_stats, list_rtss_apps, set_fps_tracking_target, FpsMonitorState};
+use commands::fps::{
+    get_fps_stats, get_fps_tracking_status, list_rtss_apps, set_fps_tracking_target,
+    FpsMonitorState,
+};
 
 use commands::gpu::get_gpu_stats;
 
@@ -192,6 +195,7 @@ pub fn run() {
             get_fps_stats,
             list_rtss_apps,
             set_fps_tracking_target,
+            get_fps_tracking_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
