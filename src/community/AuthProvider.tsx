@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
+import { useToast } from "../components/ui/toast";
 import { AuthContext } from "./AuthContext";
-import { supabase } from "./supabaseClient";
+import { extractErrorMessage, supabase } from "./supabaseClient";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -15,11 +17,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let active = true;
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      setUser(data.session?.user ?? null);
-      setLoading(false);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!active) return;
+        setUser(data.session?.user ?? null);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setLoading(false);
+        console.warn("Failed to restore auth session:", err);
+      });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
@@ -33,8 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
-    await supabase.auth.signOut();
-  }, []);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } catch (err) {
+      toast(`Sign out failed: ${extractErrorMessage(err)}`, "error");
+    }
+  }, [toast]);
 
   const value = useMemo(() => ({ user, loading, signOut }), [user, loading, signOut]);
 
