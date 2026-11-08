@@ -181,6 +181,7 @@ function GraphCard({
             stroke={lineColor}
             strokeWidth={2}
             fill={`url(#${gradientId})`}
+            isAnimationActive={false}
           />
         </AreaChart>
       </ResponsiveContainer>
@@ -231,6 +232,10 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   // Mirror of gpuStats that the 1s polling closure can read without
   // stale-state issues (the interval captures the first render's state).
   const gpuStatsRef = useRef<GpuStats | null>(null);
+  // Same idea for the FPS target, so idle ticks can skip the backend call.
+  const selectedPidRef = useRef<number | null>(null);
+  // Prevents a slow tick from overlapping the next one.
+  const pollingRef = useRef(false);
 
   useDataWiped(
     useCallback(() => {
@@ -263,9 +268,12 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
     setIsMonitoring(true);
     const interval = setInterval(() => {
-      loadStats();
-      loadGpuStats();
-      loadFpsStats();
+      if (document.visibilityState === "hidden" || pollingRef.current) return;
+      pollingRef.current = true;
+      const fps = selectedPidRef.current !== null ? loadFpsStats() : Promise.resolve();
+      Promise.allSettled([loadStats(), loadGpuStats(), fps]).finally(() => {
+        pollingRef.current = false;
+      });
     }, 1000);
 
     return () => {
@@ -273,6 +281,10 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       setIsMonitoring(false);
     };
   }, [reloadToken]);
+
+  useEffect(() => {
+    selectedPidRef.current = selectedPid;
+  }, [selectedPid]);
 
   useEffect(() => {
     rulesRef.current = rules;
@@ -307,6 +319,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   };
 
   async function loadFpsStats() {
+    if (selectedPidRef.current === null) return;
     try {
       const stats = await invoke<FpsStats | null>("get_fps_stats");
       setFpsStats(stats);
