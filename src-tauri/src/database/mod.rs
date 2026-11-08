@@ -1,5 +1,5 @@
 use crate::hotkey::canonicalize_hotkey;
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, OptionalExtension, Result};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -279,8 +279,48 @@ fn get_db_path() -> Result<PathBuf> {
     Ok(path)
 }
 
+/// Upper bound on a single clipboard entry. Prevents a huge accidental copy
+/// (e.g. a whole binary dumped as text) from bloating the database and the
+/// history payload sent to the UI.
+pub const MAX_CLIPBOARD_CONTENT_BYTES: usize = 1024 * 1024;
+
+/// How long after the newest entry an identical copy is treated as a repeat
+/// rather than a new history item. Covers polling delay and rapid Ctrl+C
+/// double-taps without swallowing deliberate re-copies.
+pub const CLIPBOARD_DEDUPE_WINDOW_SECONDS: i64 = 3;
+
+fn validate_clipboard_content(content: &str) -> Result<()> {
+    if content.trim().is_empty() {
+        return Err(schema_error("clipboard content must not be empty"));
+    }
+    if content.len() > MAX_CLIPBOARD_CONTENT_BYTES {
+        return Err(schema_error(format!(
+            "clipboard content is too large ({} bytes, max {})",
+            content.len(),
+            MAX_CLIPBOARD_CONTENT_BYTES
+        )));
+    }
+    Ok(())
+}
+
 pub fn insert_clipboard_item(conn: &Connection, content: &str) -> Result<()> {
+    validate_clipboard_content(content)?;
+
     let timestamp = chrono::Utc::now().timestamp();
+    let newest_same: Option<i64> = conn
+        .query_row(
+            "SELECT timestamp FROM clipboard_history WHERE content = ?1
+             ORDER BY timestamp DESC, id DESC LIMIT 1",
+            [content],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    if let Some(newest_timestamp) = newest_same {
+        if timestamp - newest_timestamp <= CLIPBOARD_DEDUPE_WINDOW_SECONDS {
+            return Ok(());
+        }
+    }
 
     conn.execute(
         "INSERT INTO clipboard_history (content, content_type, timestamp) VALUES (?1, ?2, ?3)",
@@ -850,5 +890,96 @@ mod wipe_tests {
         wipe_all_data(&conn).unwrap();
 
         assert_eq!(count_rows(&conn, "settings"), 0);
+    }
+}
+
+#[cfg(test)]
+mod clipboard_tests {
+    use super::*;
+
+    fn setup() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn
+    }
+
+    fn count_rows(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn rejects_empty_and_whitespace_content() {
+        let conn = setup();
+
+        assert!(insert_clipboard_item(&conn, "").is_err());
+        assert!(insert_clipboard_item(&conn, "  \n\t ").is_err());
+        assert_eq!(count_rows(&conn), 0);
+    }
+
+    #[test]
+    fn rejects_content_over_the_size_limit() {
+        let conn = setup();
+        let oversized = "a".repeat(MAX_CLIPBOARD_CONTENT_BYTES + 1);
+
+        assert!(insert_clipboard_item(&conn, &oversized).is_err());
+        assert_eq!(count_rows(&conn), 0);
+    }
+
+    #[test]
+    fn accepts_content_at_the_size_limit() {
+        let conn = setup();
+        let at_limit = "a".repeat(MAX_CLIPBOARD_CONTENT_BYTES);
+
+        insert_clipboard_item(&conn, &at_limit).unwrap();
+        assert_eq!(count_rows(&conn), 1);
+    }
+
+    #[test]
+    fn dedupes_identical_content_within_the_window() {
+        let conn = setup();
+
+        insert_clipboard_item(&conn, "hello").unwrap();
+        insert_clipboard_item(&conn, "hello").unwrap();
+
+        assert_eq!(count_rows(&conn), 1);
+    }
+
+    #[test]
+    fn dedupes_identical_content_interleaved_within_the_window() {
+        let conn = setup();
+
+        insert_clipboard_item(&conn, "hello").unwrap();
+        insert_clipboard_item(&conn, "world").unwrap();
+        insert_clipboard_item(&conn, "hello").unwrap();
+
+        assert_eq!(count_rows(&conn), 2);
+    }
+
+    #[test]
+    fn keeps_different_content() {
+        let conn = setup();
+
+        insert_clipboard_item(&conn, "hello").unwrap();
+        insert_clipboard_item(&conn, "world").unwrap();
+
+        assert_eq!(count_rows(&conn), 2);
+    }
+
+    #[test]
+    fn allows_identical_content_outside_the_window() {
+        let conn = setup();
+
+        insert_clipboard_item(&conn, "hello").unwrap();
+        conn.execute(
+            "UPDATE clipboard_history SET timestamp = timestamp - ?1",
+            [CLIPBOARD_DEDUPE_WINDOW_SECONDS + 1],
+        )
+        .unwrap();
+        insert_clipboard_item(&conn, "hello").unwrap();
+
+        assert_eq!(count_rows(&conn), 2);
     }
 }

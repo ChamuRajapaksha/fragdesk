@@ -195,9 +195,19 @@ pub fn toggle_pin(state: tauri::State<'_, DbState>, id: i32) -> Result<(), Strin
 }
 
 #[tauri::command]
-pub fn copy_to_clipboard(text: String) -> Result<(), String> {
+pub fn copy_to_clipboard(
+    state: tauri::State<'_, ClipboardMonitor>,
+    text: String,
+) -> Result<(), String> {
+    // Update the monitor's baseline under the same lock the worker uses, so
+    // the item the user just copied from history isn't re-inserted a moment
+    // later as if it were a brand-new external copy.
+    let mut last_content = state.last_content.lock().unwrap();
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
-    clipboard.set_text(text).map_err(|e| e.to_string())?;
+    clipboard
+        .set_text(text.clone())
+        .map_err(|e| e.to_string())?;
+    *last_content = text;
     Ok(())
 }
 
