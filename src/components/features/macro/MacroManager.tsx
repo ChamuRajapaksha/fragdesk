@@ -98,10 +98,10 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
     refreshMacros();
     invoke<string>("get_record_hotkey")
       .then(setRecordHotkey)
-      .catch(() => {});
+      .catch((err) => setError(extractErrorMessage(err)));
     invoke<boolean>("check_recording_permission")
       .then(setHasPermission)
-      .catch(() => {});
+      .catch((err) => setError(extractErrorMessage(err)));
 
     // Restore state that may have changed while this page was unmounted
     // (recording started from the Dashboard, a playback still running,
@@ -117,13 +117,13 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
           });
         }
       })
-      .catch(() => {});
+      .catch((err) => setError(extractErrorMessage(err)));
 
     invoke<PlaybackStatus>("get_playback_status")
       .then((status) => {
         if (status.is_playing) setPlayingId(status.macro_id);
       })
-      .catch(() => {});
+      .catch((err) => setError(extractErrorMessage(err)));
 
     const unlistenRecording = listen<{ event_count: number }>("macro-recording-progress", (e) =>
       setLiveCount(e.payload.event_count),
@@ -215,10 +215,11 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
 
       invoke("set_record_hotkey", { hotkey: combo })
         .then(() => {
+          setError(null);
           setRecordHotkey(combo);
           toast("Recording hotkey updated.", "success");
         })
-        .catch((err) => setError(String(err)))
+        .catch((err) => setError(extractErrorMessage(err)))
         .finally(() => setIsCapturingRecordHotkey(false));
     }
 
@@ -232,7 +233,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
       const result = await invoke<MacroSummary[]>("get_macros");
       setMacros(result);
     } catch (err) {
-      setError(String(err));
+      setError(extractErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -261,11 +262,12 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
       setIsRecording(true);
       setLiveCount(0);
     } catch (err) {
-      setError(String(err));
+      setError(extractErrorMessage(err));
     }
   }, []);
 
   const handleStopRecording = useCallback(async () => {
+    setError(null);
     try {
       const preview = await invoke<RecordingPreview>("stop_macro_recording");
       setIsRecording(false);
@@ -276,13 +278,14 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
       setPendingPreview(preview);
       setMacroName("");
     } catch (err) {
-      setError(String(err));
+      setError(extractErrorMessage(err));
     }
   }, []);
 
   const handleSaveMacro = useCallback(async () => {
     const name = macroName.trim();
     if (!name) return;
+    setError(null);
     try {
       await invoke("save_macro_recording", { name });
       setPendingPreview(null);
@@ -290,13 +293,16 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
       await refreshMacros();
       toast("Macro saved.", "success");
     } catch (err) {
-      setError(String(err));
+      setError(extractErrorMessage(err));
     }
   }, [macroName, refreshMacros, toast]);
 
   const handleDiscardRecording = useCallback(async () => {
+    setError(null);
     try {
       await invoke("discard_macro_recording");
+    } catch (err) {
+      setError(extractErrorMessage(err));
     } finally {
       setPendingPreview(null);
       setMacroName("");
@@ -311,17 +317,18 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
         await invoke("play_macro", { id, speed, repeat });
       } catch (err) {
         setPlayingId(null);
-        setError(String(err));
+        setError(extractErrorMessage(err));
       }
     },
     [speed, repeat],
   );
 
   const handleStopPlayback = useCallback(async () => {
+    setError(null);
     try {
       await invoke("stop_macro_playback");
     } catch (err) {
-      setError(String(err));
+      setError(extractErrorMessage(err));
     }
   }, []);
 
@@ -335,6 +342,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
     const name = renameDraft.trim();
     setRenamingId(null);
     if (!id || !name) return;
+    setError(null);
 
     // Optimistic update so the list feels instant; refresh reconciles
     // with the DB afterward in case the call fails.
@@ -342,7 +350,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
     try {
       await invoke("rename_macro", { id, name });
     } catch (err) {
-      setError(String(err));
+      setError(extractErrorMessage(err));
       await refreshMacros();
     }
   }, [renameDraft, refreshMacros]);
@@ -354,12 +362,13 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
 
   const handleDelete = useCallback(
     async (id: string) => {
+      setError(null);
       try {
         await invoke("delete_macro", { id });
         await refreshMacros();
         toast("Macro deleted.", "success");
       } catch (err) {
-        setError(String(err));
+        setError(extractErrorMessage(err));
       }
     },
     [refreshMacros, toast],
@@ -454,6 +463,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
 
   const handleExport = useCallback(
     async (m: MacroSummary) => {
+      setError(null);
       try {
         const json = await invoke<string>("export_macro_json", { id: m.id });
         const blob = new Blob([json], { type: "application/json" });
@@ -465,7 +475,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
         URL.revokeObjectURL(url);
         toast(`Exported "${m.name}".`, "success");
       } catch (err) {
-        setError(String(err));
+        setError(extractErrorMessage(err));
       }
     },
     [toast],
@@ -480,6 +490,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
       const file = e.target.files?.[0];
       e.target.value = ""; // allow re-selecting the same file later
       if (!file) return;
+      setError(null);
 
       try {
         const text = await file.text();
@@ -487,7 +498,7 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
         await refreshMacros();
         toast(`Imported "${file.name}".`, "success");
       } catch (err) {
-        setError(String(err));
+        setError(extractErrorMessage(err));
       }
     },
     [refreshMacros, toast],
@@ -495,13 +506,14 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
 
   const handleSetHotkey = useCallback(
     async (id: string, hotkey: string) => {
+      setError(null);
       try {
         await invoke("set_macro_hotkey", { id, hotkey });
         setCapturingHotkeyId(null);
         await refreshMacros();
       } catch (err) {
         setCapturingHotkeyId(null);
-        setError(String(err));
+        setError(extractErrorMessage(err));
       }
     },
     [refreshMacros],
@@ -509,11 +521,12 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
 
   const handleClearHotkey = useCallback(
     async (id: string) => {
+      setError(null);
       try {
         await invoke("set_macro_hotkey", { id, hotkey: null });
         await refreshMacros();
       } catch (err) {
-        setError(String(err));
+        setError(extractErrorMessage(err));
       }
     },
     [refreshMacros],
@@ -526,12 +539,13 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
       setAddingTagToId(null);
       if (!tag || m.tags.includes(tag)) return;
 
+      setError(null);
       const newTags = [...m.tags, tag];
       setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
       try {
         await invoke("set_macro_tags", { id: m.id, tags: newTags });
       } catch (err) {
-        setError(String(err));
+        setError(extractErrorMessage(err));
         await refreshMacros();
       }
     },
@@ -540,12 +554,13 @@ export default function MacroManager({ setActiveTab }: { setActiveTab: (tab: Nav
 
   const handleRemoveTag = useCallback(
     async (m: MacroSummary, tag: string) => {
+      setError(null);
       const newTags = m.tags.filter((t) => t !== tag);
       setMacros((prev) => prev.map((x) => (x.id === m.id ? { ...x, tags: newTags } : x)));
       try {
         await invoke("set_macro_tags", { id: m.id, tags: newTags });
       } catch (err) {
-        setError(String(err));
+        setError(extractErrorMessage(err));
         await refreshMacros();
       }
     },

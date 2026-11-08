@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Layers } from "lucide-react";
+import { extractErrorMessage } from "../../../community/supabaseClient";
 import { Badge, EmptyState, ErrorBanner, LoadingState, PageHeader, useToast } from "../../ui";
 
 interface BundledFragmentSummary {
@@ -29,11 +30,12 @@ export default function FragmentLibrary() {
 
   async function refreshFragments() {
     setLoading(true);
+    setError(null);
     try {
       const result = await invoke<BundledFragmentSummary[]>("list_bundled_fragments");
       setFragments(result);
     } catch (err) {
-      setError(String(err));
+      setError(extractErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -47,7 +49,7 @@ export default function FragmentLibrary() {
       setImportedFilenames((prev) => new Set(prev).add(f.filename));
       toast(`Imported "${f.name}".`, "success");
     } catch (err) {
-      setError(String(err));
+      setError(extractErrorMessage(err));
     } finally {
       setImportingFilename(null);
     }
