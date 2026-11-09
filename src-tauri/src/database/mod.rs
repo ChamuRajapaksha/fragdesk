@@ -62,11 +62,11 @@ fn schema_error(message: impl Into<String>) -> rusqlite::Error {
 
 /// Schema version tracked in `PRAGMA user_version`. Bump this and append a
 /// migration whenever the schema changes.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 type Migration = fn(&Connection) -> Result<()>;
 
-const MIGRATIONS: &[Migration] = &[migration_001_initial_schema];
+const MIGRATIONS: &[Migration] = &[migration_001_initial_schema, migration_002_clipboard_order];
 
 fn initialize_schema(conn: &Connection) -> Result<()> {
     let current: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -142,6 +142,18 @@ fn migration_001_initial_schema(conn: &Connection) -> Result<()> {
     ensure_column(conn, "macros", "tags", "TEXT")?;
     ensure_column(conn, "macros", "source", "TEXT")?;
 
+    Ok(())
+}
+
+/// Adds the index backing the clipboard history sort order: pinned items
+/// first, then newest to oldest, with `id` as a stable tie-breaker. Without
+/// this the query has to sort the whole table on every fetch.
+fn migration_002_clipboard_order(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_clipboard_order
+         ON clipboard_history(is_pinned DESC, timestamp DESC, id DESC)",
+        [],
+    )?;
     Ok(())
 }
 
@@ -284,6 +296,20 @@ fn get_db_path() -> Result<PathBuf> {
 /// history payload sent to the UI.
 pub const MAX_CLIPBOARD_CONTENT_BYTES: usize = 1024 * 1024;
 
+/// Lower/upper bounds for a clipboard history query. A negative or zero
+/// limit would otherwise return nothing or rely on SQLite's interpretation;
+/// an unbounded limit lets a caller pull the whole table into memory.
+pub const MIN_CLIPBOARD_QUERY_LIMIT: i32 = 1;
+pub const MAX_CLIPBOARD_QUERY_LIMIT: i32 = 2000;
+
+/// Unpinned entries kept on disk. Pinned entries are never pruned. This
+/// bounds long-running clipboard capture so history cannot grow forever.
+pub const MAX_UNPINNED_CLIPBOARD_HISTORY: i64 = 1000;
+
+pub fn clamp_clipboard_limit(limit: i32) -> i32 {
+    limit.clamp(MIN_CLIPBOARD_QUERY_LIMIT, MAX_CLIPBOARD_QUERY_LIMIT)
+}
+
 /// How long after the newest entry an identical copy is treated as a repeat
 /// rather than a new history item. Covers polling delay and rapid Ctrl+C
 /// double-taps without swallowing deliberate re-copies.
@@ -327,13 +353,28 @@ pub fn insert_clipboard_item(conn: &Connection, content: &str) -> Result<()> {
         [content, "text", &timestamp.to_string()],
     )?;
 
+    // Keep only the newest unpinned entries. Pinned rows are exempt so a
+    // user can hold onto a snippet indefinitely regardless of activity.
+    conn.execute(
+        "DELETE FROM clipboard_history
+         WHERE is_pinned = 0
+           AND id NOT IN (
+             SELECT id FROM clipboard_history
+             WHERE is_pinned = 0
+             ORDER BY timestamp DESC, id DESC
+             LIMIT ?1
+           )",
+        [MAX_UNPINNED_CLIPBOARD_HISTORY],
+    )?;
+
     Ok(())
 }
 
 pub fn get_clipboard_history(conn: &Connection, limit: i32) -> Result<Vec<ClipboardItem>> {
+    let limit = clamp_clipboard_limit(limit);
     let mut stmt = conn.prepare(
         "SELECT id, content, timestamp, is_pinned FROM clipboard_history 
-         ORDER BY timestamp DESC LIMIT ?1",
+         ORDER BY is_pinned DESC, timestamp DESC, id DESC LIMIT ?1",
     )?;
 
     let items = stmt.query_map([limit], |row| {
@@ -981,5 +1022,94 @@ mod clipboard_tests {
         insert_clipboard_item(&conn, "hello").unwrap();
 
         assert_eq!(count_rows(&conn), 2);
+    }
+
+    #[test]
+    fn clamps_the_query_limit_to_a_sane_range() {
+        assert_eq!(clamp_clipboard_limit(-5), MIN_CLIPBOARD_QUERY_LIMIT);
+        assert_eq!(clamp_clipboard_limit(0), MIN_CLIPBOARD_QUERY_LIMIT);
+        assert_eq!(clamp_clipboard_limit(50), 50);
+        assert_eq!(clamp_clipboard_limit(i32::MAX), MAX_CLIPBOARD_QUERY_LIMIT);
+    }
+
+    #[test]
+    fn pinned_items_sort_first_even_when_older() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO clipboard_history (content, content_type, timestamp, is_pinned)
+             VALUES ('old pinned', 'text', 100, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO clipboard_history (content, content_type, timestamp, is_pinned)
+             VALUES ('new unpinned', 'text', 200, 0)",
+            [],
+        )
+        .unwrap();
+
+        let items = get_clipboard_history(&conn, 10).unwrap();
+        assert_eq!(items[0].content, "old pinned");
+        assert_eq!(items[1].content, "new unpinned");
+    }
+
+    #[test]
+    fn ties_on_timestamp_sort_by_newest_id_first() {
+        let conn = setup();
+        for content in ["first", "second", "third"] {
+            conn.execute(
+                "INSERT INTO clipboard_history (content, content_type, timestamp, is_pinned)
+                 VALUES (?1, 'text', 500, 0)",
+                [content],
+            )
+            .unwrap();
+        }
+
+        let ids: Vec<i32> = get_clipboard_history(&conn, 10)
+            .unwrap()
+            .into_iter()
+            .map(|item| item.id)
+            .collect();
+        assert_eq!(ids, vec![3, 2, 1]);
+    }
+
+    #[test]
+    fn retention_prunes_oldest_unpinned_but_keeps_pinned() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO clipboard_history (content, content_type, timestamp, is_pinned)
+             VALUES ('keep pinned', 'text', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        for i in 0..(MAX_UNPINNED_CLIPBOARD_HISTORY + 5) {
+            conn.execute(
+                "INSERT INTO clipboard_history (content, content_type, timestamp, is_pinned)
+                 VALUES (?1, 'text', ?2, 0)",
+                rusqlite::params![format!("item-{i}"), i],
+            )
+            .unwrap();
+        }
+
+        insert_clipboard_item(&conn, "trigger").unwrap();
+
+        let unpinned: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_history WHERE is_pinned = 0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(unpinned, MAX_UNPINNED_CLIPBOARD_HISTORY);
+
+        let pinned: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_history WHERE is_pinned = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(pinned, 1, "pinned rows are exempt from retention");
     }
 }
