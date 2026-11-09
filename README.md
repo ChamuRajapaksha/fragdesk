@@ -14,14 +14,13 @@ A lightweight, performance-focused desktop companion for gamers and power users.
 
 ### 📋 Clipboard Manager
 
-- Automatic clipboard history with live monitoring
+- Clipboard history captured by a monitor you can start and stop
 - Search, pin, delete, and copy items back to the clipboard
 - Export/import clipboard snippets as JSON
 
 ### 📊 System Monitor
 
 - Real-time **CPU, RAM, and GPU** metrics
-- Per-core CPU breakdown
 - **Alert rules** — get notified when a metric crosses a threshold (create, toggle, export/import)
 - **Customizable layout** — show/hide, reorder, and manage dashboard widgets; share layouts with the community
 - **FPS / 1% lows tracking** via RTSS/MSI Afterburner (reads frame-timing data without hooking games directly)
@@ -48,7 +47,7 @@ A lightweight, performance-focused desktop companion for gamers and power users.
 - **Desktop Framework:** [Tauri 2.0](https://tauri.app/)
 - **Frontend:** React 19 + TypeScript + TailwindCSS + Vite
 - **Backend:** Rust
-- **State Management:** Zustand
+- **State Management:** Local component state + React Context (no global store library)
 - **Storage:** SQLite (local)
 - **Community Backend:** Supabase (auth + shared fragment storage)
 - **UI:** framer-motion, lucide-react, recharts
@@ -135,7 +134,8 @@ fragdesk/
 │   │   │   ├── onboarding/       # First-run tour
 │   │   │   └── settings/         # Settings page
 │   │   └── layout/               # Main layout & sidebar
-│   ├── community/                # Supabase client & auth hooks
+│   ├── community/                # Supabase client & AuthProvider
+│   ├── features/                 # Feature registry, hotkey helpers, data events
 │   ├── types/                    # Shared TypeScript types
 │   └── App.tsx                   # Main app + tab routing
 ├── src-tauri/                    # Rust backend
@@ -148,10 +148,15 @@ fragdesk/
 │   │   │   ├── monitor_layout.rs# Dashboard layout
 │   │   │   ├── alerts.rs        # Alert rules
 │   │   │   ├── fps.rs           # RTSS FPS tracking
+│   │   │   ├── gpu.rs           # GPU stats
+│   │   │   ├── theme.rs         # Persisted UI palette
+│   │   │   ├── data.rs          # Wipe / factory reset
 │   │   │   ├── permissions.rs   # Recording permission checks
 │   │   │   └── onboarding.rs    # Onboarding state
-│   │   ├── database.rs          # SQLite schema & access
+│   │   ├── database/mod.rs      # SQLite schema, migrations & access
 │   │   ├── fragments.rs         # Fragment format/import
+│   │   ├── gpu.rs               # Native GPU sampling
+│   │   ├── hotkey.rs            # Canonical shortcut parser
 │   │   └── rtss.rs              # RTSS integration
 │   └── tauri.conf.json          # Tauri config (command mapping, etc.)
 ├── .env                         # Supabase keys (optional, see above)

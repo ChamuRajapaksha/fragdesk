@@ -4,134 +4,94 @@
 
 ```
 fragdesk/
-├── src/                                # Frontend (React + TypeScript)
-│   ├── components/                     # All React components
-│   │   ├── ui/                        # Reusable UI primitives
-│   │   │   ├── Button.tsx
-│   │   │   ├── Card.tsx
-│   │   │   ├── Input.tsx
-│   │   │   ├── Modal.tsx
-│   │   │   └── Tooltip.tsx
-│   │   │
-│   │   ├── layout/                    # Layout components
-│   │   │   ├── Sidebar.tsx
-│   │   │   ├── TopBar.tsx
-│   │   │   └── MainLayout.tsx
-│   │   │
-│   │   └── features/                  # Feature-specific components
-│   │       ├── clipboard/
-│   │       │   ├── ClipboardHistory.tsx
-│   │       │   ├── ClipboardItem.tsx
-│   │       │   └── ClipboardSearch.tsx
-│   │       │
-│   │       ├── macros/
-│   │       │   ├── MacroEditor.tsx
-│   │       │   ├── MacroList.tsx
-│   │       │   ├── MacroRecorder.tsx
-│   │       │   └── MacroPlayer.tsx
-│   │       │
-│   │       ├── monitor/
-│   │       │   ├── CpuGraph.tsx
-│   │       │   ├── RamGraph.tsx
-│   │       │   ├── GpuStats.tsx
-│   │       │   └── SystemOverview.tsx
-│   │       │
-│   │       └── settings/
-│   │           ├── GeneralSettings.tsx
-│   │           ├── ThemeSettings.tsx
-│   │           └── HotkeySettings.tsx
+├── src/                                # Frontend (React 19 + TypeScript)
+│   ├── components/
+│   │   ├── ui/                        # Reusable UI primitives (Button, Card,
+│   │   │                              #   StatCard, Modal, toast, ErrorBoundary, ...)
+│   │   ├── layout/                    # MainLayout.tsx, Sidebar.tsx
+│   │   ├── dashboard/                 # DashboardHome.tsx
+│   │   └── features/
+│   │       ├── clipboard/             # ClipboardHistory.tsx, ClipboardItemRow.tsx
+│   │       ├── command/               # CommandPalette.tsx (Ctrl/Cmd + K)
+│   │       ├── community/             # CommunityLibrary + Auth/Preview/Report/Filter
+│   │       ├── fragments/             # FragmentLibrary.tsx (bundled fragments)
+│   │       ├── macro/                 # MacroManager.tsx, MacroCard.tsx
+│   │       ├── monitor/               # SystemMonitor.tsx (charts, alerts, layout)
+│   │       ├── onboarding/            # OnboardingTour.tsx
+│   │       └── settings/              # SettingsPage.tsx, AccountSection.tsx
 │   │
-│   ├── stores/                        # Zustand state management
-│   │   ├── clipboardStore.ts
-│   │   ├── macroStore.ts
-│   │   ├── monitorStore.ts
-│   │   ├── settingsStore.ts
-│   │   └── uiStore.ts
+│   ├── community/                     # Supabase client and auth context
+│   │   ├── supabaseClient.ts
+│   │   ├── AuthContext.ts
+│   │   ├── AuthProvider.tsx           # Single app-wide auth subscription
+│   │   └── useAuth.ts                 # Consumer hook (user, loading, signOut)
 │   │
-│   ├── hooks/                         # Custom React hooks
-│   │   ├── useClipboard.ts
-│   │   ├── useMacro.ts
-│   │   ├── useSystemStats.ts
-│   │   └── useKeyboard.ts
+│   ├── features/                      # Frontend feature infrastructure
+│   │   ├── registry.tsx               # Typed feature registry (nav/pages)
+│   │   ├── hotkeys.ts                 # Hotkey format/capture helpers
+│   │   ├── hotkeys.test.ts
+│   │   └── dataEvents.ts              # Tauri event subscriptions (e.g. data-wiped)
 │   │
-│   ├── lib/                           # Utilities & helpers
-│   │   ├── tauri.ts                  # Tauri command wrappers
-│   │   ├── utils.ts                  # General utilities
-│   │   ├── formatters.ts             # Data formatters
-│   │   └── constants.ts              # App constants
-│   │
-│   ├── types/                         # TypeScript types
-│   │   ├── clipboard.ts
-│   │   ├── macro.ts
-│   │   ├── monitor.ts
-│   │   └── index.ts
-│   │
-│   ├── styles/                        # Global styles
-│   │   ├── globals.css
-│   │   └── themes.css
-│   │
-│   ├── App.tsx                        # Main app component
+│   ├── types/                         # Shared TypeScript types
+│   ├── themes.ts                      # Palette definitions + applyPalette()
+│   ├── App.tsx                        # Main app + tab routing + providers
+│   ├── App.css                        # Global styles / CSS custom properties
 │   ├── main.tsx                       # Entry point
-│   └── vite-env.d.ts
+│   └── test/setup.ts                  # Vitest + jest-dom setup
 │
 ├── src-tauri/                         # Backend (Rust)
 │   ├── src/
 │   │   ├── commands/                  # Tauri commands (Frontend ↔ Backend)
-│   │   │   ├── clipboard.rs
-│   │   │   ├── macros.rs
-│   │   │   ├── monitor.rs
-│   │   │   └── settings.rs
+│   │   │   ├── macros.rs              # Macro recording/playback/hotkeys
+│   │   │   ├── clipboard.rs           # Clipboard CRUD + monitor worker
+│   │   │   ├── monitor.rs             # CPU/RAM stats
+│   │   │   ├── gpu.rs                 # GPU stats (DXGI/PDH)
+│   │   │   ├── fps.rs                 # RTSS FPS poller
+│   │   │   ├── monitor_layout.rs      # Dashboard widget layout
+│   │   │   ├── alerts.rs              # Alert rules
+│   │   │   ├── onboarding.rs          # Onboarding state
+│   │   │   ├── theme.rs               # Persisted UI palette
+│   │   │   ├── data.rs                # Wipe / factory reset
+│   │   │   ├── permissions.rs         # Recording permission checks
+│   │   │   └── mod.rs                 # DbState helpers (with_db / with_db_handle)
 │   │   │
-│   │   ├── services/                  # Business logic
-│   │   │   ├── clipboard_service.rs
-│   │   │   ├── macro_service.rs
-│   │   │   └── monitor_service.rs
-│   │   │
-│   │   ├── database/                  # SQLite management
-│   │   │   ├── mod.rs
-│   │   │   ├── schema.rs
-│   │   │   ├── clipboard_db.rs
-│   │   │   └── macro_db.rs
-│   │   │
-│   │   ├── models/                    # Data structures
-│   │   │   ├── clipboard.rs
-│   │   │   ├── macro.rs
-│   │   │   └── system_stats.rs
-│   │   │
-│   │   ├── utils/                     # Rust utilities
-│   │   │   ├── keyboard.rs
-│   │   │   └── helpers.rs
-│   │   │
-│   │   ├── main.rs                    # Entry point
-│   │   └── lib.rs                     # Library exports
+│   │   ├── database/mod.rs            # SQLite connection, migrations, all queries
+│   │   ├── fragments.rs               # Fragment format/import/export
+│   │   ├── gpu.rs                     # Native GPU sampling
+│   │   ├── rtss.rs                    # RTSS shared-memory reader
+│   │   ├── hotkey.rs                  # Canonical shortcut parser
+│   │   ├── lib.rs                     # Tauri entry point & command registry
+│   │   └── main.rs                    # Binary entry
 │   │
+│   ├── capabilities/default.json      # Tauri permissions/capabilities
 │   ├── Cargo.toml                     # Rust dependencies
-│   ├── tauri.conf.json                # Tauri configuration
+│   ├── tauri.conf.json                # Tauri configuration (CSP, window, ...)
 │   └── build.rs
 │
-├── public/                            # Static assets
-│   └── icons/
+├── supabase/                          # SQL applied in the Supabase dashboard
+│   ├── schema.sql
+│   ├── supabase_auth_migration.sql
+│   ├── reports_migration.sql
+│   └── delete_account_migration.sql
 │
-├── .github/                           # GitHub config
-│   └── workflows/
-│       └── build.yml                  # CI/CD (optional)
-│
-├── docs/                              # Documentation
-│   ├── ARCHITECTURE.md
-│   ├── DATABASE.md
-│   └── TEAM_WORKFLOW.md
-│
+├── .github/workflows/                 # CI (Ubuntu + Windows jobs)
+├── docs/ARCHITECTURE.md
 ├── README.md
 ├── LICENSE
 ├── .gitignore
 ├── package.json
 ├── tsconfig.json
-└── vite.config.ts
+├── vite.config.ts
+└── vitest.config.ts
 ```
 
 ---
 
 ## 🗄️ Database Schema (SQLite)
+
+The schema lives in `src-tauri/src/database/mod.rs` and is applied through
+ordered migrations tracked in `PRAGMA user_version` (currently version 2).
+There is no separate migrations directory.
 
 ### **clipboard_history** table
 
@@ -139,37 +99,47 @@ fragdesk/
 CREATE TABLE clipboard_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     content TEXT NOT NULL,
-    content_type TEXT NOT NULL,  -- 'text', 'image', 'file'
+    content_type TEXT NOT NULL,  -- currently always 'text'
     timestamp INTEGER NOT NULL,
-    is_pinned BOOLEAN DEFAULT 0,
-    app_source TEXT,
-    char_count INTEGER,
-    created_at INTEGER DEFAULT (strftime('%s', 'now'))
+    is_pinned BOOLEAN DEFAULT 0
 );
 
-CREATE INDEX idx_timestamp ON clipboard_history(timestamp DESC);
-CREATE INDEX idx_pinned ON clipboard_history(is_pinned);
-
--- Full-text search
-CREATE VIRTUAL TABLE clipboard_fts USING fts5(content, content_tokenize='porter');
+-- History is fetched pinned-first, then newest-first.
+CREATE INDEX idx_clipboard_order
+    ON clipboard_history(is_pinned DESC, timestamp DESC, id DESC);
 ```
 
 ### **macros** table
 
 ```sql
 CREATE TABLE macros (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    description TEXT,
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    event_count INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    events_json TEXT NOT NULL,  -- JSON array of recorded events
     hotkey TEXT,
-    events BLOB NOT NULL,  -- JSON blob of recorded events
-    created_at INTEGER DEFAULT (strftime('%s', 'now')),
-    updated_at INTEGER DEFAULT (strftime('%s', 'now')),
-    is_enabled BOOLEAN DEFAULT 1,
-    play_count INTEGER DEFAULT 0
+    tags TEXT,
+    source TEXT
 );
 
-CREATE INDEX idx_hotkey ON macros(hotkey);
+CREATE INDEX idx_macros_created_at ON macros(created_at DESC);
+```
+
+### **monitor_alert_rules** table
+
+```sql
+CREATE TABLE monitor_alert_rules (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    comparison TEXT NOT NULL,
+    threshold REAL NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    source TEXT,
+    created_at INTEGER NOT NULL
+);
 ```
 
 ### **settings** table
@@ -177,8 +147,7 @@ CREATE INDEX idx_hotkey ON macros(hotkey);
 ```sql
 CREATE TABLE settings (
     key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+    value TEXT NOT NULL
 );
 ```
 
@@ -189,31 +158,31 @@ CREATE TABLE settings (
 ### **Person 1: Clipboard Manager**
 
 - `src/components/features/clipboard/`
-- `src/stores/clipboardStore.ts`
 - `src-tauri/src/commands/clipboard.rs`
-- `src-tauri/src/services/clipboard_service.rs`
-- `src-tauri/src/database/clipboard_db.rs`
+- Clipboard queries in `src-tauri/src/database/mod.rs`
 
 ### **Person 2: System Monitor**
 
 - `src/components/features/monitor/`
-- `src/stores/monitorStore.ts`
 - `src-tauri/src/commands/monitor.rs`
-- `src-tauri/src/services/monitor_service.rs`
+- `src-tauri/src/commands/gpu.rs`
+- `src-tauri/src/commands/fps.rs`
+- `src-tauri/src/gpu.rs`
+- `src-tauri/src/rtss.rs`
 
 ### **Person 3: Macro System**
 
-- `src/components/features/macros/`
-- `src/stores/macroStore.ts`
+- `src/components/features/macro/`
 - `src-tauri/src/commands/macros.rs`
-- `src-tauri/src/services/macro_service.rs`
-- `src-tauri/src/database/macro_db.rs`
+- `src-tauri/src/hotkey.rs`
+- Macro queries in `src-tauri/src/database/mod.rs`
 
 ### **Shared Responsibility:**
 
 - `src/components/ui/` - Everyone can contribute
 - `src/components/layout/` - Person 1 (after clipboard is done)
 - `src/components/features/settings/` - Person 2 (after monitor is done)
+- `src/features/registry.tsx` - Everyone (new pages must be registered here)
 - Testing & bug fixes - Everyone
 
 ---
@@ -270,25 +239,27 @@ Brief description
 
 ### **Frontend**
 
-- **Framework:** React 18 + TypeScript
-- **State:** Zustand (lightweight, no boilerplate)
+- **Framework:** React 19 + TypeScript
+- **State:** Local component state plus a single React Context
+  (`AuthProvider`) for auth. There is no Zustand or global client store.
 - **Styling:** TailwindCSS + Framer Motion
 - **Charts:** Recharts (for system monitor graphs)
-- **Build:** Vite
+- **Build:** Vite (Vitest + Testing Library for tests)
 
 ### **Backend**
 
 - **Language:** Rust
 - **Framework:** Tauri 2.0
-- **Async:** Tokio
-- **Database:** rusqlite
-- **Input Handling:** rdev + enigo
+- **Async:** Tauri's async commands; blocking sampling runs on `spawn_blocking`
+- **Database:** rusqlite (one managed connection behind a mutex)
+- **Input Handling:** global-shortcut plugin + rdev + enigo
 
 ### **Database**
 
 - **Engine:** SQLite 3
 - **ORM:** Direct SQL (via rusqlite)
-- **Migrations:** Manual SQL files in `src-tauri/migrations/`
+- **Migrations:** Versioned in `src-tauri/src/database/mod.rs`, tracked by
+  `PRAGMA user_version`
 
 ---
 
