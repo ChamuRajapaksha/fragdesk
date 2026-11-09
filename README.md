@@ -62,12 +62,17 @@ A lightweight, performance-focused desktop companion for gamers and power users.
 
 ## Environment
 
-The **Community Library** requires a connected Supabase project. Create a `.env` file in the project root with:
+The **Community Library** requires a connected Supabase project. Copy
+`.env.example` to `.env` in the project root and fill in:
 
 ```
 VITE_SUPABASE_URL=your_project_url
 VITE_SUPABASE_ANON_KEY=your_anon_key
 ```
+
+Only the **public anon key** belongs in `VITE_*` variables — everything with
+that prefix is compiled into the frontend bundle. Never put the service-role
+key or any other secret there.
 
 The app degrades gracefully — without these variables, the Community Library shows a "Not set up yet" notice while all local features still work.
 
