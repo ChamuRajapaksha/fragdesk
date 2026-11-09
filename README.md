@@ -71,6 +71,43 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
 
 The app degrades gracefully — without these variables, the Community Library shows a "Not set up yet" notice while all local features still work.
 
+## Supabase Setup
+
+The Community Library needs the SQL files in `supabase/` applied to your
+Supabase project. Open **Project → SQL Editor** and run them **in this exact
+order**:
+
+1. `supabase/schema.sql`
+2. `supabase/supabase_auth_migration.sql`
+3. `supabase/reports_migration.sql`
+4. `supabase/delete_account_migration.sql`
+
+Run them against a staging project first, then repeat the same order on
+production after taking a backup. In **Authentication → Providers → Email**,
+decide whether email confirmation is on — turning it off makes desktop testing
+simpler because there is no deep-link confirmation flow.
+
+After running the files, verify the policies and the `submitted_by` column type
+in the SQL Editor:
+
+```sql
+-- Policies exist on fragments
+select policyname, cmd from pg_policies where tablename = 'fragments';
+
+-- submitted_by must be uuid, not text
+select column_name, data_type
+from information_schema.columns
+where table_name = 'fragments' and column_name = 'submitted_by';
+```
+
+Then sign in from the app and share one macro, one clipboard snippet, one
+alert rule, and one monitor layout — all four must succeed.
+
+Legacy rows with `submitted_by = NULL` are pre-auth anonymous submissions that
+are intentionally unowned (`auth.uid()` can never equal `NULL`), so they cannot
+be edited or deleted by any account. Leave them as-is unless you want to remove
+them manually in the dashboard.
+
 ## Development Setup
 
 ### 1. Clone the Repository
