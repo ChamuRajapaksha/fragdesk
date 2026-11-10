@@ -1,12 +1,105 @@
-use rusqlite::{Connection, Result};
+use crate::hotkey::canonicalize_hotkey;
+use rusqlite::{Connection, OptionalExtension, Result};
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::Duration;
+
+/// The single long-lived connection shared by every command. Holding one
+/// connection behind a mutex (rather than opening the DB on every command)
+/// keeps WAL/busy-timeout settings in effect and avoids repeated open/schema
+/// work. Commands access it through `crate::commands::with_db`.
+pub struct DbState {
+    conn: Mutex<Connection>,
+}
+
+impl DbState {
+    pub fn new(conn: Connection) -> Self {
+        Self {
+            conn: Mutex::new(conn),
+        }
+    }
+
+    pub fn with<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+        let conn = self.conn.lock().map_err(|_| {
+            schema_error("database lock poisoned; a previous command panicked while holding it")
+        })?;
+        f(&conn)
+    }
+}
 
 pub fn init_database() -> Result<Connection> {
-    let db_path = get_db_path();
+    let db_path = get_db_path()?;
     let conn = Connection::open(db_path)?;
+    configure_connection(&conn)?;
+    initialize_schema(&conn)?;
+    Ok(conn)
+}
 
+/// Applies the connection-level PRAGMAs every command relies on. WAL lets
+/// readers and the background clipboard worker coexist without blocking
+/// each other, the busy timeout gives brief write contention a chance to
+/// settle, and foreign keys are enabled for future schema additions.
+fn configure_connection(conn: &Connection) -> Result<()> {
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    conn.busy_timeout(Duration::from_secs(5))?;
+    Ok(())
+}
 
-    conn.execute(
+fn db_open_error(message: impl Into<String>) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+        Some(message.into()),
+    )
+}
+
+fn schema_error(message: impl Into<String>) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+        Some(message.into()),
+    )
+}
+
+/// Schema version tracked in `PRAGMA user_version`. Bump this and append a
+/// migration whenever the schema changes.
+const SCHEMA_VERSION: i64 = 2;
+
+type Migration = fn(&Connection) -> Result<()>;
+
+const MIGRATIONS: &[Migration] = &[migration_001_initial_schema, migration_002_clipboard_order];
+
+fn initialize_schema(conn: &Connection) -> Result<()> {
+    let current: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+
+    if current > SCHEMA_VERSION {
+        return Err(schema_error(format!(
+            "database schema version {current} is newer than the supported version {SCHEMA_VERSION}"
+        )));
+    }
+
+    for (index, migration) in MIGRATIONS.iter().enumerate() {
+        let target = index as i64 + 1;
+        if current >= target {
+            continue;
+        }
+
+        let tx = conn.unchecked_transaction()?;
+        migration(&tx)?;
+        tx.pragma_update(None, "user_version", target)?;
+        tx.commit()?;
+    }
+
+    normalize_stored_hotkeys(conn)?;
+
+    Ok(())
+}
+
+/// Creates every table, index, and column that existed before migrations
+/// were versioned. `CREATE ... IF NOT EXISTS` plus explicit column checks
+/// keep this safe for databases created by older builds, which report
+/// `user_version = 0` even though their schema is already partially current.
+fn migration_001_initial_schema(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS monitor_alert_rules (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -16,74 +109,120 @@ pub fn init_database() -> Result<Connection> {
             enabled INTEGER NOT NULL DEFAULT 1,
             source TEXT,
             created_at INTEGER NOT NULL
-        )",
-        [],
-    )?;
+        );
 
-
-    // Create clipboard_history table
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS clipboard_history (
+        CREATE TABLE IF NOT EXISTS clipboard_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             content TEXT NOT NULL,
             content_type TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
             is_pinned BOOLEAN DEFAULT 0
-        )",
-        [],
-    )?;
+        );
 
-    // Create index for faster queries
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_timestamp ON clipboard_history(timestamp DESC)",
-        [],
-    )?;
+        CREATE INDEX IF NOT EXISTS idx_timestamp ON clipboard_history(timestamp DESC);
 
-    // Create macros table
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS macros (
+        CREATE TABLE IF NOT EXISTS macros (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             created_at INTEGER NOT NULL,
             event_count INTEGER NOT NULL,
             duration_ms INTEGER NOT NULL,
             events_json TEXT NOT NULL
-        )",
-        [],
-    )?;
+        );
 
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_macros_created_at ON macros(created_at DESC)",
-        [],
-    )?;
+        CREATE INDEX IF NOT EXISTS idx_macros_created_at ON macros(created_at DESC);
 
-    // Migration: add hotkey column if it doesn't exist yet (older DBs won't
-    // have it). SQLite has no "ADD COLUMN IF NOT EXISTS", so we just ignore
-    // the error if the column is already there.
-    let _ = conn.execute("ALTER TABLE macros ADD COLUMN hotkey TEXT", []);
-
-    // Migration: add tags column (JSON array of strings, e.g. '["Combat","Utility"]').
-    // NULL/missing is treated identically to an empty array everywhere this
-    // is read, so existing macros don't need backfilling.
-    let _ = conn.execute("ALTER TABLE macros ADD COLUMN tags TEXT", []);
-
-    // Migration: add source column (NULL = recorded locally, "community",
-    // or "starter"). Used only for UI badging so a downloaded macro is
-    // never visually indistinguishable from one you recorded yourself.
-    let _ = conn.execute("ALTER TABLE macros ADD COLUMN source TEXT", []);
-
-    // Generic key-value settings store. Currently used for the
-    // record-toggle hotkey, but kept general so future app-wide
-    // preferences don't each need their own table.
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS settings (
+        CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
-        )",
-        [],
+        );",
     )?;
 
-    Ok(conn)
+    ensure_column(conn, "macros", "hotkey", "TEXT")?;
+    ensure_column(conn, "macros", "tags", "TEXT")?;
+    ensure_column(conn, "macros", "source", "TEXT")?;
+
+    Ok(())
+}
+
+/// Adds the index backing the clipboard history sort order: pinned items
+/// first, then newest to oldest, with `id` as a stable tie-breaker. Without
+/// this the query has to sort the whole table on every fetch.
+fn migration_002_clipboard_order(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_clipboard_order
+         ON clipboard_history(is_pinned DESC, timestamp DESC, id DESC)",
+        [],
+    )?;
+    Ok(())
+}
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn ensure_column(conn: &Connection, table: &str, column: &str, declaration: &str) -> Result<()> {
+    if column_exists(conn, table, column)? {
+        return Ok(());
+    }
+
+    conn.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {declaration}"),
+        [],
+    )?;
+    Ok(())
+}
+
+/// Rewrites any persisted hotkey that isn't already in the global-shortcut
+/// plugin's canonical form (`shift+control+F9`, not `Ctrl+Shift+F9`). Both
+/// the record-toggle setting and every macro hotkey are normalized, so a
+/// value loaded at startup compares equal to the string the plugin's
+/// handler emits when that key actually fires.
+fn normalize_stored_hotkeys(conn: &Connection) -> Result<()> {
+    const RECORD_HOTKEY_SETTING_KEY: &str = "record_toggle_hotkey";
+
+    if let Some(raw) = get_setting(conn, RECORD_HOTKEY_SETTING_KEY)? {
+        if let Ok(canonical) = canonicalize_hotkey(&raw) {
+            if canonical != raw {
+                set_setting(conn, RECORD_HOTKEY_SETTING_KEY, &canonical)?;
+            }
+        }
+    }
+
+    let updates: Vec<(String, String)> = {
+        let mut stmt = conn.prepare("SELECT id, hotkey FROM macros WHERE hotkey IS NOT NULL")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut updates = Vec::new();
+        for row in rows {
+            let (id, raw) = row?;
+            if let Ok(canonical) = canonicalize_hotkey(&raw) {
+                if canonical != raw {
+                    updates.push((id, canonical));
+                }
+            }
+        }
+        updates
+    };
+
+    for (id, canonical) in updates {
+        conn.execute(
+            "UPDATE macros SET hotkey = ?1 WHERE id = ?2",
+            rusqlite::params![canonical, id],
+        )?;
+    }
+
+    Ok(())
 }
 
 pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>> {
@@ -109,37 +248,133 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
 /// monitor alert rules) and clears the `settings` store -- the record
 /// hotkey, UI theme, and onboarding-completed flag all reset to their
 /// first-run defaults along with user data. A true factory reset.
+///
+/// The deletes run in one transaction so a failure cannot leave a partial
+/// reset. `secure_delete` plus `VACUUM` overwrite freed pages instead of
+/// merely marking them reusable, and the WAL is checkpointed so deleted
+/// rows do not linger in the sidecar file. The database file itself is not
+/// deleted: Windows keeps it locked while the managed connection is open,
+/// and reopening would require tearing down `DbState`.
 pub fn wipe_all_data(conn: &Connection) -> Result<()> {
-    conn.execute("DELETE FROM macros", [])?;
-    conn.execute("DELETE FROM clipboard_history", [])?;
-    conn.execute("DELETE FROM monitor_alert_rules", [])?;
-    conn.execute("DELETE FROM settings", [])?;
+    conn.pragma_update(None, "secure_delete", "ON")?;
+
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM macros", [])?;
+    tx.execute("DELETE FROM clipboard_history", [])?;
+    tx.execute("DELETE FROM monitor_alert_rules", [])?;
+    tx.execute("DELETE FROM settings", [])?;
+    tx.execute(
+        "DELETE FROM sqlite_sequence WHERE name = 'clipboard_history'",
+        [],
+    )?;
+    tx.commit()?;
+
+    // These must run outside the transaction. VACUUM rewrites the file so
+    // deleted content is not left recoverable; the checkpoint folds the WAL
+    // back into the main database.
+    conn.execute_batch("VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")?;
+
     Ok(())
 }
 
-fn get_db_path() -> PathBuf {
-    let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+fn get_db_path() -> Result<PathBuf> {
+    let mut path = dirs::data_local_dir()
+        .ok_or_else(|| db_open_error("could not resolve the platform local data directory"))?;
     path.push("FragDesk");
-    std::fs::create_dir_all(&path).ok();
+    std::fs::create_dir_all(&path).map_err(|err| {
+        db_open_error(format!(
+            "could not create the FragDesk data directory at {}: {err}",
+            path.display()
+        ))
+    })?;
     path.push("fragdesk.db");
-    path
+    Ok(path)
+}
+
+/// Upper bound on a single clipboard entry. Prevents a huge accidental copy
+/// (e.g. a whole binary dumped as text) from bloating the database and the
+/// history payload sent to the UI.
+pub const MAX_CLIPBOARD_CONTENT_BYTES: usize = 1024 * 1024;
+
+/// Lower/upper bounds for a clipboard history query. A negative or zero
+/// limit would otherwise return nothing or rely on SQLite's interpretation;
+/// an unbounded limit lets a caller pull the whole table into memory.
+pub const MIN_CLIPBOARD_QUERY_LIMIT: i32 = 1;
+pub const MAX_CLIPBOARD_QUERY_LIMIT: i32 = 2000;
+
+/// Unpinned entries kept on disk. Pinned entries are never pruned. This
+/// bounds long-running clipboard capture so history cannot grow forever.
+pub const MAX_UNPINNED_CLIPBOARD_HISTORY: i64 = 1000;
+
+pub fn clamp_clipboard_limit(limit: i32) -> i32 {
+    limit.clamp(MIN_CLIPBOARD_QUERY_LIMIT, MAX_CLIPBOARD_QUERY_LIMIT)
+}
+
+/// How long after the newest entry an identical copy is treated as a repeat
+/// rather than a new history item. Covers polling delay and rapid Ctrl+C
+/// double-taps without swallowing deliberate re-copies.
+pub const CLIPBOARD_DEDUPE_WINDOW_SECONDS: i64 = 3;
+
+fn validate_clipboard_content(content: &str) -> Result<()> {
+    if content.trim().is_empty() {
+        return Err(schema_error("clipboard content must not be empty"));
+    }
+    if content.len() > MAX_CLIPBOARD_CONTENT_BYTES {
+        return Err(schema_error(format!(
+            "clipboard content is too large ({} bytes, max {})",
+            content.len(),
+            MAX_CLIPBOARD_CONTENT_BYTES
+        )));
+    }
+    Ok(())
 }
 
 pub fn insert_clipboard_item(conn: &Connection, content: &str) -> Result<()> {
+    validate_clipboard_content(content)?;
+
     let timestamp = chrono::Utc::now().timestamp();
+    let newest_same: Option<i64> = conn
+        .query_row(
+            "SELECT timestamp FROM clipboard_history WHERE content = ?1
+             ORDER BY timestamp DESC, id DESC LIMIT 1",
+            [content],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    if let Some(newest_timestamp) = newest_same {
+        if timestamp - newest_timestamp <= CLIPBOARD_DEDUPE_WINDOW_SECONDS {
+            return Ok(());
+        }
+    }
 
     conn.execute(
         "INSERT INTO clipboard_history (content, content_type, timestamp) VALUES (?1, ?2, ?3)",
         [content, "text", &timestamp.to_string()],
     )?;
 
+    // Keep only the newest unpinned entries. Pinned rows are exempt so a
+    // user can hold onto a snippet indefinitely regardless of activity.
+    conn.execute(
+        "DELETE FROM clipboard_history
+         WHERE is_pinned = 0
+           AND id NOT IN (
+             SELECT id FROM clipboard_history
+             WHERE is_pinned = 0
+             ORDER BY timestamp DESC, id DESC
+             LIMIT ?1
+           )",
+        [MAX_UNPINNED_CLIPBOARD_HISTORY],
+    )?;
+
     Ok(())
 }
 
 pub fn get_clipboard_history(conn: &Connection, limit: i32) -> Result<Vec<ClipboardItem>> {
+    let limit = clamp_clipboard_limit(limit);
     let mut stmt = conn.prepare(
         "SELECT id, content, timestamp, is_pinned FROM clipboard_history 
-         ORDER BY timestamp DESC LIMIT ?1"
+         ORDER BY is_pinned DESC, timestamp DESC, id DESC LIMIT ?1",
     )?;
 
     let items = stmt.query_map([limit], |row| {
@@ -190,12 +425,32 @@ pub fn toggle_pin_item(conn: &Connection, id: i32) -> Result<()> {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
 pub enum MacroEvent {
-    KeyDown { key: String, delay_ms: u64 },
-    KeyUp { key: String, delay_ms: u64 },
-    MouseMove { x: f64, y: f64, delay_ms: u64 },
-    MouseDown { button: String, delay_ms: u64 },
-    MouseUp { button: String, delay_ms: u64 },
-    Wheel { delta_x: i64, delta_y: i64, delay_ms: u64 },
+    KeyDown {
+        key: String,
+        delay_ms: u64,
+    },
+    KeyUp {
+        key: String,
+        delay_ms: u64,
+    },
+    MouseMove {
+        x: f64,
+        y: f64,
+        delay_ms: u64,
+    },
+    MouseDown {
+        button: String,
+        delay_ms: u64,
+    },
+    MouseUp {
+        button: String,
+        delay_ms: u64,
+    },
+    Wheel {
+        delta_x: i64,
+        delta_y: i64,
+        delay_ms: u64,
+    },
 }
 
 /// Metadata-only view used for list screens (no event payload).
@@ -253,7 +508,14 @@ pub fn insert_macro(
     conn.execute(
         "INSERT INTO macros (id, name, created_at, event_count, duration_ms, events_json)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![id, name, timestamp, events.len() as i32, duration_ms, events_json],
+        rusqlite::params![
+            id,
+            name,
+            timestamp,
+            events.len() as i32,
+            duration_ms,
+            events_json
+        ],
     )?;
 
     Ok(())
@@ -325,7 +587,6 @@ pub fn get_macro_by_id(conn: &Connection, id: &str) -> Result<Option<MacroItem>>
     } else {
         Ok(None)
     }
-
 }
 
 pub fn set_macro_tags(conn: &Connection, id: &str, tags: &[String]) -> Result<()> {
@@ -386,7 +647,6 @@ pub fn load_hotkey_map(conn: &Connection) -> Result<Vec<(String, String)>> {
     Ok(result)
 }
 
- 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AlertRule {
     pub id: String,
@@ -398,7 +658,7 @@ pub struct AlertRule {
     pub source: Option<String>,
     pub created_at: i64,
 }
- 
+
 pub fn insert_alert_rule(
     conn: &Connection,
     id: &str,
@@ -416,13 +676,13 @@ pub fn insert_alert_rule(
     )?;
     Ok(())
 }
- 
+
 pub fn get_alert_rules(conn: &Connection) -> Result<Vec<AlertRule>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, metric, comparison, threshold, enabled, source, created_at
          FROM monitor_alert_rules ORDER BY created_at DESC",
     )?;
- 
+
     let items = stmt.query_map([], |row| {
         Ok(AlertRule {
             id: row.get(0)?,
@@ -435,14 +695,14 @@ pub fn get_alert_rules(conn: &Connection) -> Result<Vec<AlertRule>> {
             created_at: row.get(7)?,
         })
     })?;
- 
+
     let mut result = Vec::new();
     for item in items {
         result.push(item?);
     }
     Ok(result)
 }
- 
+
 pub fn get_alert_rule_by_id(conn: &Connection, id: &str) -> Result<Option<AlertRule>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, metric, comparison, threshold, enabled, source, created_at
@@ -464,12 +724,15 @@ pub fn get_alert_rule_by_id(conn: &Connection, id: &str) -> Result<Option<AlertR
         Ok(None)
     }
 }
- 
+
 pub fn delete_alert_rule_item(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM monitor_alert_rules WHERE id = ?1", rusqlite::params![id])?;
+    conn.execute(
+        "DELETE FROM monitor_alert_rules WHERE id = ?1",
+        rusqlite::params![id],
+    )?;
     Ok(())
 }
- 
+
 pub fn toggle_alert_rule_item(conn: &Connection, id: &str) -> Result<()> {
     conn.execute(
         "UPDATE monitor_alert_rules SET enabled = NOT enabled WHERE id = ?1",
@@ -477,4 +740,376 @@ pub fn toggle_alert_rule_item(conn: &Connection, id: &str) -> Result<()> {
     )?;
     Ok(())
 }
- 
+
+#[cfg(test)]
+mod hotkey_normalization_tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_record_and_macro_hotkeys_to_handler_form() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        set_setting(&conn, "record_toggle_hotkey", "Ctrl+Shift+F9").unwrap();
+        conn.execute(
+            "INSERT INTO macros
+                (id, name, created_at, event_count, duration_ms, events_json, hotkey)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                "m1",
+                "Test macro",
+                0,
+                0,
+                0,
+                "[]",
+                "CommandOrControl+Alt+KeyA"
+            ],
+        )
+        .unwrap();
+
+        normalize_stored_hotkeys(&conn).unwrap();
+
+        let record = get_setting(&conn, "record_toggle_hotkey").unwrap().unwrap();
+        assert_eq!(record, "shift+control+F9");
+
+        let stored = load_hotkey_map(&conn).unwrap();
+        assert_eq!(stored.len(), 1);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(stored[0].0, "control+alt+KeyA");
+        #[cfg(target_os = "macos")]
+        assert_eq!(stored[0].0, "super+alt+KeyA");
+
+        // The persisted value is already in the exact form the shortcut
+        // handler receives from the plugin when the key fires.
+        assert_eq!(canonicalize_hotkey(&stored[0].0).unwrap(), stored[0].0);
+    }
+}
+
+#[cfg(test)]
+mod connection_tests {
+    use super::*;
+
+    #[test]
+    fn configures_concurrency_pragmas() {
+        let conn = Connection::open_in_memory().unwrap();
+        configure_connection(&conn).unwrap();
+
+        let foreign_keys: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(foreign_keys, 1);
+
+        let busy_timeout: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(busy_timeout, 5_000);
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+
+    fn user_version(conn: &Connection) -> i64 {
+        conn.pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn migrations_are_idempotent_and_record_the_version() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        initialize_schema(&conn).unwrap();
+        assert_eq!(user_version(&conn), SCHEMA_VERSION);
+        assert!(column_exists(&conn, "macros", "hotkey").unwrap());
+        assert!(column_exists(&conn, "macros", "tags").unwrap());
+        assert!(column_exists(&conn, "macros", "source").unwrap());
+
+        initialize_schema(&conn).unwrap();
+        assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn upgrades_a_legacy_schema_that_has_no_version_marker() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE macros (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                event_count INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                events_json TEXT NOT NULL
+            );",
+        )
+        .unwrap();
+
+        assert_eq!(user_version(&conn), 0);
+
+        initialize_schema(&conn).unwrap();
+
+        assert_eq!(user_version(&conn), SCHEMA_VERSION);
+        assert!(column_exists(&conn, "macros", "hotkey").unwrap());
+        assert!(column_exists(&conn, "macros", "tags").unwrap());
+        assert!(column_exists(&conn, "macros", "source").unwrap());
+    }
+
+    #[test]
+    fn rejects_a_database_from_a_newer_schema_version() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+            .unwrap();
+
+        assert!(initialize_schema(&conn).is_err());
+    }
+}
+
+#[cfg(test)]
+mod wipe_tests {
+    use super::*;
+
+    fn count_rows(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn wipe_empties_every_table_and_resets_the_id_sequence() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        set_setting(&conn, "ui_theme", "neon").unwrap();
+        insert_clipboard_item(&conn, "hello").unwrap();
+        insert_macro(&conn, "m1", "Macro", &[], 0).unwrap();
+        insert_alert_rule(&conn, "a1", "Alert", "cpu", "above", 90.0, None).unwrap();
+
+        let seq: i64 = conn
+            .query_row(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'clipboard_history'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(seq, 1);
+
+        wipe_all_data(&conn).unwrap();
+
+        for table in [
+            "macros",
+            "clipboard_history",
+            "monitor_alert_rules",
+            "settings",
+        ] {
+            assert_eq!(count_rows(&conn, table), 0, "{table} should be empty");
+        }
+
+        let seq_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_sequence WHERE name = 'clipboard_history'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(seq_rows, 0, "clipboard id sequence should reset");
+
+        // The next clipboard row starts at id 1 again.
+        insert_clipboard_item(&conn, "again").unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM clipboard_history", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(id, 1);
+    }
+
+    #[test]
+    fn wipe_is_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+
+        wipe_all_data(&conn).unwrap();
+        wipe_all_data(&conn).unwrap();
+
+        assert_eq!(count_rows(&conn, "settings"), 0);
+    }
+}
+
+#[cfg(test)]
+mod clipboard_tests {
+    use super::*;
+
+    fn setup() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_schema(&conn).unwrap();
+        conn
+    }
+
+    fn count_rows(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn rejects_empty_and_whitespace_content() {
+        let conn = setup();
+
+        assert!(insert_clipboard_item(&conn, "").is_err());
+        assert!(insert_clipboard_item(&conn, "  \n\t ").is_err());
+        assert_eq!(count_rows(&conn), 0);
+    }
+
+    #[test]
+    fn rejects_content_over_the_size_limit() {
+        let conn = setup();
+        let oversized = "a".repeat(MAX_CLIPBOARD_CONTENT_BYTES + 1);
+
+        assert!(insert_clipboard_item(&conn, &oversized).is_err());
+        assert_eq!(count_rows(&conn), 0);
+    }
+
+    #[test]
+    fn accepts_content_at_the_size_limit() {
+        let conn = setup();
+        let at_limit = "a".repeat(MAX_CLIPBOARD_CONTENT_BYTES);
+
+        insert_clipboard_item(&conn, &at_limit).unwrap();
+        assert_eq!(count_rows(&conn), 1);
+    }
+
+    #[test]
+    fn dedupes_identical_content_within_the_window() {
+        let conn = setup();
+
+        insert_clipboard_item(&conn, "hello").unwrap();
+        insert_clipboard_item(&conn, "hello").unwrap();
+
+        assert_eq!(count_rows(&conn), 1);
+    }
+
+    #[test]
+    fn dedupes_identical_content_interleaved_within_the_window() {
+        let conn = setup();
+
+        insert_clipboard_item(&conn, "hello").unwrap();
+        insert_clipboard_item(&conn, "world").unwrap();
+        insert_clipboard_item(&conn, "hello").unwrap();
+
+        assert_eq!(count_rows(&conn), 2);
+    }
+
+    #[test]
+    fn keeps_different_content() {
+        let conn = setup();
+
+        insert_clipboard_item(&conn, "hello").unwrap();
+        insert_clipboard_item(&conn, "world").unwrap();
+
+        assert_eq!(count_rows(&conn), 2);
+    }
+
+    #[test]
+    fn allows_identical_content_outside_the_window() {
+        let conn = setup();
+
+        insert_clipboard_item(&conn, "hello").unwrap();
+        conn.execute(
+            "UPDATE clipboard_history SET timestamp = timestamp - ?1",
+            [CLIPBOARD_DEDUPE_WINDOW_SECONDS + 1],
+        )
+        .unwrap();
+        insert_clipboard_item(&conn, "hello").unwrap();
+
+        assert_eq!(count_rows(&conn), 2);
+    }
+
+    #[test]
+    fn clamps_the_query_limit_to_a_sane_range() {
+        assert_eq!(clamp_clipboard_limit(-5), MIN_CLIPBOARD_QUERY_LIMIT);
+        assert_eq!(clamp_clipboard_limit(0), MIN_CLIPBOARD_QUERY_LIMIT);
+        assert_eq!(clamp_clipboard_limit(50), 50);
+        assert_eq!(clamp_clipboard_limit(i32::MAX), MAX_CLIPBOARD_QUERY_LIMIT);
+    }
+
+    #[test]
+    fn pinned_items_sort_first_even_when_older() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO clipboard_history (content, content_type, timestamp, is_pinned)
+             VALUES ('old pinned', 'text', 100, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO clipboard_history (content, content_type, timestamp, is_pinned)
+             VALUES ('new unpinned', 'text', 200, 0)",
+            [],
+        )
+        .unwrap();
+
+        let items = get_clipboard_history(&conn, 10).unwrap();
+        assert_eq!(items[0].content, "old pinned");
+        assert_eq!(items[1].content, "new unpinned");
+    }
+
+    #[test]
+    fn ties_on_timestamp_sort_by_newest_id_first() {
+        let conn = setup();
+        for content in ["first", "second", "third"] {
+            conn.execute(
+                "INSERT INTO clipboard_history (content, content_type, timestamp, is_pinned)
+                 VALUES (?1, 'text', 500, 0)",
+                [content],
+            )
+            .unwrap();
+        }
+
+        let ids: Vec<i32> = get_clipboard_history(&conn, 10)
+            .unwrap()
+            .into_iter()
+            .map(|item| item.id)
+            .collect();
+        assert_eq!(ids, vec![3, 2, 1]);
+    }
+
+    #[test]
+    fn retention_prunes_oldest_unpinned_but_keeps_pinned() {
+        let conn = setup();
+        conn.execute(
+            "INSERT INTO clipboard_history (content, content_type, timestamp, is_pinned)
+             VALUES ('keep pinned', 'text', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        for i in 0..(MAX_UNPINNED_CLIPBOARD_HISTORY + 5) {
+            conn.execute(
+                "INSERT INTO clipboard_history (content, content_type, timestamp, is_pinned)
+                 VALUES (?1, 'text', ?2, 0)",
+                rusqlite::params![format!("item-{i}"), i],
+            )
+            .unwrap();
+        }
+
+        insert_clipboard_item(&conn, "trigger").unwrap();
+
+        let unpinned: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_history WHERE is_pinned = 0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(unpinned, MAX_UNPINNED_CLIPBOARD_HISTORY);
+
+        let pinned: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_history WHERE is_pinned = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(pinned, 1, "pinned rows are exempt from retention");
+    }
+}

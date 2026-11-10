@@ -1,9 +1,8 @@
 use crate::rtss::read_rtss_apps;
 use serde::Serialize;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread;
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 /// How many individual frame samples the rolling buffer keeps. At a
@@ -19,20 +18,32 @@ const SAMPLE_BUFFER_SIZE: usize = 1000;
 /// real limitation at very high frame rates.
 const POLL_INTERVAL: Duration = Duration::from_millis(4);
 
+/// Consecutive polls (~100ms) a target may be absent from RTSS before the
+/// collected samples are dropped. Tolerates a transient lookup miss without
+/// leaving stale FPS on screen after the game has actually closed.
+const MISSES_BEFORE_CLEAR: u32 = 25;
+
 pub struct FpsMonitorState {
     target_pid: Arc<Mutex<Option<u32>>>,
+    target_name: Arc<Mutex<Option<String>>>,
     samples: Arc<Mutex<VecDeque<u32>>>,
     last_seen_frames: Arc<Mutex<Option<u32>>>,
-    poller_spawned: Arc<AtomicBool>,
+    /// `(running, wake)` lets the poller idle (instead of waking every 4ms)
+    /// while no target is selected, and wake immediately when one is set or
+    /// when the poller is being shut down.
+    control: Arc<(Mutex<bool>, Condvar)>,
+    poller: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl FpsMonitorState {
     pub fn new() -> Self {
         Self {
             target_pid: Arc::new(Mutex::new(None)),
+            target_name: Arc::new(Mutex::new(None)),
             samples: Arc::new(Mutex::new(VecDeque::new())),
             last_seen_frames: Arc::new(Mutex::new(None)),
-            poller_spawned: Arc::new(AtomicBool::new(false)),
+            control: Arc::new((Mutex::new(false), Condvar::new())),
+            poller: Mutex::new(None),
         }
     }
 }
@@ -49,6 +60,14 @@ pub struct FpsStats {
     pub avg_fps: f32,
     pub one_percent_low_fps: f32,
     pub sample_count: usize,
+}
+
+/// Current tracking target, so the UI can restore its selection after
+/// navigating away from the monitor page.
+#[derive(Debug, Clone, Serialize)]
+pub struct FpsTrackingStatus {
+    pub process_id: Option<u32>,
+    pub process_name: Option<String>,
 }
 
 /// One-shot list of apps RTSS currently has hooked, for the user to
@@ -69,25 +88,62 @@ pub fn list_rtss_apps() -> Result<Vec<RtssAppSummary>, String> {
 pub fn set_fps_tracking_target(
     state: tauri::State<'_, FpsMonitorState>,
     process_id: Option<u32>,
+    process_name: Option<String>,
 ) -> Result<(), String> {
-    *state.target_pid.lock().unwrap() = process_id;
-    state.samples.lock().unwrap().clear();
-    *state.last_seen_frames.lock().unwrap() = None;
-
-    if process_id.is_some()
-        && state
-            .poller_spawned
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
     {
-        spawn_poller(
+        *state.target_pid.lock().unwrap() = process_id;
+        *state.target_name.lock().unwrap() = process_name;
+        state.samples.lock().unwrap().clear();
+        *state.last_seen_frames.lock().unwrap() = None;
+    }
+
+    let mut poller = state.poller.lock().unwrap();
+    if process_id.is_some() && poller.is_none() {
+        let (running, _) = &*state.control;
+        *running.lock().unwrap() = true;
+        *poller = Some(spawn_poller(
+            state.control.clone(),
             state.target_pid.clone(),
             state.samples.clone(),
             state.last_seen_frames.clone(),
-        );
+        ));
     }
+    drop(poller);
+
+    // Wake an idle poller so it notices the new (or cleared) target.
+    state.control.1.notify_all();
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_fps_tracking_status(state: tauri::State<'_, FpsMonitorState>) -> FpsTrackingStatus {
+    FpsTrackingStatus {
+        process_id: *state.target_pid.lock().unwrap(),
+        process_name: state.target_name.lock().unwrap().clone(),
+    }
+}
+
+/// Stops the poller and waits for the thread to exit. Safe to call when no
+/// poller is running.
+pub fn shutdown_poller(state: &FpsMonitorState) {
+    let (running, wake) = &*state.control;
+    *running.lock().unwrap() = false;
+    wake.notify_all();
+
+    if let Some(handle) = state.poller.lock().unwrap().take() {
+        let _ = handle.join();
+    }
+}
+
+/// Clears the tracking target and all collected samples and stops the
+/// poller. Used by the factory-reset flow to stop sampling immediately.
+pub fn clear_tracking(state: &FpsMonitorState) {
+    *state.target_pid.lock().unwrap() = None;
+    *state.target_name.lock().unwrap() = None;
+    state.samples.lock().unwrap().clear();
+    *state.last_seen_frames.lock().unwrap() = None;
+    shutdown_poller(state);
 }
 
 #[tauri::command]
@@ -100,57 +156,89 @@ pub fn get_fps_stats(state: tauri::State<'_, FpsMonitorState>) -> Result<Option<
 }
 
 fn spawn_poller(
+    control: Arc<(Mutex<bool>, Condvar)>,
     target_pid: Arc<Mutex<Option<u32>>>,
     samples: Arc<Mutex<VecDeque<u32>>>,
     last_seen_frames: Arc<Mutex<Option<u32>>>,
-) {
-    thread::spawn(move || loop {
-        thread::sleep(POLL_INTERVAL);
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let (running, wake) = &*control;
+        let mut misses = 0u32;
 
-        let pid = match *target_pid.lock().unwrap() {
-            Some(pid) => pid,
-            None => continue, // tracking stopped -- keep the thread alive, just idle
-        };
+        loop {
+            // Idle on the condvar while there is no target, rather than
+            // waking every 4ms just to find nothing to sample. The command
+            // that sets a target notifies us.
+            {
+                let mut guard = running.lock().unwrap();
+                loop {
+                    if !*guard {
+                        return;
+                    }
+                    if target_pid.lock().unwrap().is_some() {
+                        break;
+                    }
+                    guard = wake.wait(guard).unwrap();
+                }
+            }
 
-        let apps = match read_rtss_apps() {
-            Ok(apps) => apps,
-            Err(_) => continue, // RTSS momentarily unavailable -- skip this tick
-        };
+            thread::sleep(POLL_INTERVAL);
 
-        let Some(app) = apps.iter().find(|a| a.process_id == pid) else {
-            continue; // target not currently hooked by RTSS (e.g. game closed)
-        };
+            let pid = match *target_pid.lock().unwrap() {
+                Some(pid) => pid,
+                None => continue, // target cleared while polling -- go idle
+            };
 
-        // Only record a sample when the frame counter has actually
-        // advanced since the last poll -- otherwise a slower game (or
-        // one that's paused/alt-tabbed) would have the same
-        // frame_time_us re-recorded on every 4ms tick, silently
-        // skewing the average toward whatever the last real frame was.
-        //
-        // Real limitation, stated plainly: at frame rates faster than
-        // ~250fps (faster than one frame per 4ms poll interval), this
-        // still only captures one sample per poll even if multiple
-        // frames actually rendered in between -- it's a representative
-        // sample of that period, not a complete per-frame capture. For
-        // typical gaming frame rates this is a reasonable
-        // approximation; it is not frame-perfect at very high refresh
-        // rates.
-        let mut last_frames = last_seen_frames.lock().unwrap();
-        let is_new_frame = match *last_frames {
-            Some(prev) => app.frames != prev,
-            None => true, // first sample for this tracking session
-        };
-        *last_frames = Some(app.frames);
-        drop(last_frames);
+            let apps = match read_rtss_apps() {
+                Ok(apps) => apps,
+                Err(_) => continue, // RTSS momentarily unavailable -- skip this tick
+            };
 
-        if is_new_frame && app.frame_time_us > 0 {
-            let mut buf = samples.lock().unwrap();
-            buf.push_back(app.frame_time_us);
-            if buf.len() > SAMPLE_BUFFER_SIZE {
-                buf.pop_front();
+            let Some(app) = apps.iter().find(|a| a.process_id == pid) else {
+                // Target not currently hooked by RTSS (e.g. game closed).
+                // Clear after a short grace period so a single transient
+                // miss does not wipe a good sample window, but a closed
+                // game stops reporting stale FPS.
+                misses += 1;
+                if misses >= MISSES_BEFORE_CLEAR {
+                    samples.lock().unwrap().clear();
+                    *last_seen_frames.lock().unwrap() = None;
+                }
+                continue;
+            };
+            misses = 0;
+
+            // Only record a sample when the frame counter has actually
+            // advanced since the last poll -- otherwise a slower game (or
+            // one that's paused/alt-tabbed) would have the same
+            // frame_time_us re-recorded on every 4ms tick, silently
+            // skewing the average toward whatever the last real frame was.
+            //
+            // Real limitation, stated plainly: at frame rates faster than
+            // ~250fps (faster than one frame per 4ms poll interval), this
+            // still only captures one sample per poll even if multiple
+            // frames actually rendered in between -- it's a representative
+            // sample of that period, not a complete per-frame capture. For
+            // typical gaming frame rates this is a reasonable
+            // approximation; it is not frame-perfect at very high refresh
+            // rates.
+            let mut last_frames = last_seen_frames.lock().unwrap();
+            let is_new_frame = match *last_frames {
+                Some(prev) => app.frames != prev,
+                None => true, // first sample for this tracking session
+            };
+            *last_frames = Some(app.frames);
+            drop(last_frames);
+
+            if is_new_frame && app.frame_time_us > 0 {
+                let mut buf = samples.lock().unwrap();
+                buf.push_back(app.frame_time_us);
+                if buf.len() > SAMPLE_BUFFER_SIZE {
+                    buf.pop_front();
+                }
             }
         }
-    });
+    })
 }
 
 /// Pure, testable statistics computation -- deliberately separated from
@@ -179,8 +267,7 @@ pub fn calculate_fps_stats(frame_times_us: &[u32]) -> Option<FpsStats> {
 
     let one_percent_count = ((sorted_times.len() as f64) * 0.01).ceil().max(1.0) as usize;
     let slowest = &sorted_times[..one_percent_count.min(sorted_times.len())];
-    let avg_slowest_time_us =
-        slowest.iter().map(|&t| t as f64).sum::<f64>() / slowest.len() as f64;
+    let avg_slowest_time_us = slowest.iter().map(|&t| t as f64).sum::<f64>() / slowest.len() as f64;
     let one_percent_low_fps = 1_000_000.0 / avg_slowest_time_us;
 
     Some(FpsStats {
@@ -227,7 +314,10 @@ mod tests {
         samples.push(100_000);
 
         let stats = calculate_fps_stats(&samples).unwrap();
-        assert!(stats.avg_fps > 55.0, "one stutter shouldn't tank the average much");
+        assert!(
+            stats.avg_fps > 55.0,
+            "one stutter shouldn't tank the average much"
+        );
         assert!(
             stats.one_percent_low_fps < 15.0,
             "the 1% low should reflect the stutter frame specifically, got {}",

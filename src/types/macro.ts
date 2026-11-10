@@ -1,49 +1,32 @@
 export interface Macro {
+  id: number;
 
-    id:number;
+  name: string;
 
-    name:string;
+  created: number;
 
-    created:number;
+  updated: number;
 
-    updated:number;
+  hotkey: string | null;
 
-    hotkey:string | null;
-
-    events:MacroEvent[];
-
+  events: MacroEvent[];
 }
 
-export interface MacroEvent{
+export interface MacroEvent {
+  order: number;
 
-    order:number;
+  delay: number;
 
-    delay:number;
+  type: EventType;
 
-    type:EventType;
+  key?: string;
 
-    key?:string;
+  button?: string;
 
-    button?:string;
+  x?: number;
 
-    x?:number;
-
-    y?:number;
-
+  y?: number;
 }
 
 export type EventType =
-
-    | "keydown"
-
-    | "keyup"
-
-    | "mousedown"
-
-    | "mouseup"
-
-    | "mousemove"
-
-    | "scroll"
-
-    | "delay";
+  "keydown" | "keyup" | "mousedown" | "mouseup" | "mousemove" | "scroll" | "delay";

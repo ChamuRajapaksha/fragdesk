@@ -1,19 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { Trash2, UserCircle2 } from 'lucide-react';
+import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Trash2, UserCircle2 } from "lucide-react";
 import {
   extractErrorMessage,
   isSupabaseConfigured,
   supabase,
-} from '../../../community/supabaseClient';
-import { useAuth } from '../../../community/useAuth';
-import { useToast } from '../../ui';
-import { applyPaletteById, DEFAULT_PALETTE_ID } from '../../../themes';
-import type { NavId } from '../../../features/registry';
+} from "../../../community/supabaseClient";
+import { useAuth } from "../../../community/useAuth";
+import { useToast } from "../../ui";
+import type { NavId } from "../../../features/registry";
 
 interface AccountSectionProps {
   setActiveTab?: (tab: NavId) => void;
-  onAccountDeleted?: () => void;
 }
 
 function PasswordInput({
@@ -43,7 +41,7 @@ function PasswordInput({
       <div className="relative">
         <input
           id={id}
-          type={show ? 'text' : 'password'}
+          type={show ? "text" : "password"}
           required
           minLength={6}
           autoComplete={autoComplete}
@@ -59,13 +57,35 @@ function PasswordInput({
           className="absolute right-2 top-1/2 -translate-y-1/2 text-frag-muted hover:text-frag-text p-1 rounded-md transition-colors"
         >
           {show ? (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" strokeLinecap="round" strokeLinejoin="round" />
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
               <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" />
             </svg>
           ) : (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" strokeLinecap="round" strokeLinejoin="round" />
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path
+                d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
               <circle cx="12" cy="12" r="3" />
             </svg>
           )}
@@ -75,28 +95,29 @@ function PasswordInput({
   );
 }
 
-export default function AccountSection({ setActiveTab, onAccountDeleted }: AccountSectionProps) {
+export default function AccountSection({ setActiveTab }: AccountSectionProps) {
   const { user, loading, signOut } = useAuth();
   const { toast } = useToast();
 
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [changing, setChanging] = useState(false);
 
-  const [typedEmail, setTypedEmail] = useState('');
+  const [typedEmail, setTypedEmail] = useState("");
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const deleteArmTimer = useRef<number | null>(null);
 
-  const emailMatches = user !== null && typedEmail.trim().toLowerCase() === user.email?.toLowerCase();
+  const emailMatches =
+    user !== null && typedEmail.trim().toLowerCase() === user.email?.toLowerCase();
 
   useEffect(
     () => () => {
       if (deleteArmTimer.current !== null) window.clearTimeout(deleteArmTimer.current);
     },
-    []
+    [],
   );
 
   function armDelete() {
@@ -114,13 +135,13 @@ export default function AccountSection({ setActiveTab, onAccountDeleted }: Accou
       //    mid-call, so Supabase can reply with a revoked-token or
       //    expired-JWT error even though the deletion fully succeeded --
       //    treat those as success.
-      const { error: rpcError } = await supabase.rpc('delete_account');
-      const rpcMessage = rpcError?.message ?? '';
+      const { error: rpcError } = await supabase.rpc("delete_account");
+      const rpcMessage = rpcError?.message ?? "";
       if (rpcError && !/jwt|expired|revok/i.test(rpcMessage)) throw rpcError;
 
       // 2. Factory-reset the local SQLite database (macros, clipboard
       //    history, alert rules, and the settings store).
-      await invoke('wipe_local_data');
+      await invoke("wipe_local_data");
 
       // 3. Clear the in-memory session. Swallow any error -- the account
       //    is already gone, local data is already gone; failing to sign
@@ -130,16 +151,12 @@ export default function AccountSection({ setActiveTab, onAccountDeleted }: Accou
       } catch {
         // ignore
       }
-
-      applyPaletteById(DEFAULT_PALETTE_ID);
-      onAccountDeleted?.();
-      toast('Account and data deleted', 'success');
     } catch (err) {
-      toast(extractErrorMessage(err), 'error');
+      toast(extractErrorMessage(err), "error");
     } finally {
       setDeleting(false);
       setDeleteArmed(false);
-      setTypedEmail('');
+      setTypedEmail("");
     }
   }
 
@@ -153,7 +170,7 @@ export default function AccountSection({ setActiveTab, onAccountDeleted }: Accou
       // to change credentials. Treat this as confirmation of identity, not
       // as a redundant sign-in.
       const { error: reauthError } = await supabase.auth.signInWithPassword({
-        email: user.email ?? '',
+        email: user.email ?? "",
         password: currentPassword,
       });
       if (reauthError) throw reauthError;
@@ -161,12 +178,12 @@ export default function AccountSection({ setActiveTab, onAccountDeleted }: Accou
       const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
       if (updateError) throw updateError;
 
-      setCurrentPassword('');
-      setNewPassword('');
-      toast('Password updated', 'success');
+      setCurrentPassword("");
+      setNewPassword("");
+      toast("Password updated", "success");
     } catch (err) {
       const message = extractErrorMessage(err);
-      toast(message, 'error');
+      toast(message, "error");
     } finally {
       setChanging(false);
     }
@@ -180,9 +197,9 @@ export default function AccountSection({ setActiveTab, onAccountDeleted }: Accou
           <h2 className="text-lg font-semibold text-frag-text">Account</h2>
         </div>
         <p className="text-sm text-frag-muted break-words">
-          Community account features not set up. Add{' '}
-          <code className="text-frag-primary">VITE_SUPABASE_URL</code> and{' '}
-          <code className="text-frag-primary">VITE_SUPABASE_ANON_KEY</code> to your{' '}
+          Community account features not set up. Add{" "}
+          <code className="text-frag-primary">VITE_SUPABASE_URL</code> and{" "}
+          <code className="text-frag-primary">VITE_SUPABASE_ANON_KEY</code> to your{" "}
           <code className="text-frag-primary">.env</code> file, then restart the dev server.
         </p>
       </section>
@@ -209,7 +226,7 @@ export default function AccountSection({ setActiveTab, onAccountDeleted }: Accou
           manage your account.
         </p>
         <button
-          onClick={() => setActiveTab?.('community')}
+          onClick={() => setActiveTab?.("community")}
           className="px-4 py-2 rounded-lg bg-frag-primary hover:bg-frag-primary/80 active:scale-[0.99] text-frag-bg text-sm font-semibold transition-all"
         >
           Go to Community sign in
@@ -271,18 +288,17 @@ export default function AccountSection({ setActiveTab, onAccountDeleted }: Accou
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-frag-primary hover:bg-frag-primary/80 active:scale-[0.99] text-frag-bg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
         >
           {changing && (
-            <svg
-              className="animate-spin"
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
+            <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
-              <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              <path
+                d="M22 12a10 10 0 0 1-10 10"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
             </svg>
           )}
-          {changing ? 'Updating…' : 'Change password'}
+          {changing ? "Updating…" : "Change password"}
         </button>
       </form>
 
@@ -293,9 +309,9 @@ export default function AccountSection({ setActiveTab, onAccountDeleted }: Accou
           <h3 className="text-base font-semibold text-frag-danger">Delete account and data</h3>
         </div>
         <p className="text-sm text-frag-muted break-words">
-          Permanently deletes your Community account, removes what you&apos;ve shared, and wipes
-          all local FragDesk data — macros, clipboard history, monitor alerts, and settings. This
-          cannot be undone.
+          Permanently deletes your Community account, removes what you&apos;ve shared, and wipes all
+          local FragDesk data — macros, clipboard history, monitor alerts, and settings. This cannot
+          be undone.
         </p>
         <div className="space-y-2">
           <label htmlFor="account-delete-email" className="sr-only">
@@ -325,11 +341,11 @@ export default function AccountSection({ setActiveTab, onAccountDeleted }: Accou
             aria-live="polite"
             className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
               deleteArmed
-                ? 'bg-frag-danger text-frag-bg border-frag-danger hover:bg-frag-danger/80'
-                : 'border-frag-danger text-frag-danger hover:bg-frag-danger/10'
+                ? "bg-frag-danger text-frag-bg border-frag-danger hover:bg-frag-danger/80"
+                : "border-frag-danger text-frag-danger hover:bg-frag-danger/10"
             }`}
           >
-            {deleting ? 'Deleting…' : deleteArmed ? 'Click again to confirm' : 'Delete account'}
+            {deleting ? "Deleting…" : deleteArmed ? "Click again to confirm" : "Delete account"}
           </button>
         </div>
       </div>

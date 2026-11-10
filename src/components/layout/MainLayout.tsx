@@ -1,6 +1,6 @@
-import { ReactNode } from 'react';
-import Sidebar from './Sidebar';
-import type { NavId } from '../../features/registry';
+import { ReactNode } from "react";
+import Sidebar from "./Sidebar";
+import type { NavId } from "../../features/registry";
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -12,11 +12,9 @@ export default function MainLayout({ children, activeTab, setActiveTab }: MainLa
   return (
     <div className="flex h-screen bg-frag-bg overflow-hidden">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
-      
+
       <main className="flex-1 overflow-y-auto">
-        <div className="p-4 md:p-8">
-          {children}
-        </div>
+        <div className="p-4 md:p-8">{children}</div>
       </main>
     </div>
   );

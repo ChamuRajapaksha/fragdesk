@@ -1,0 +1,10 @@
+# Formatting-only commits. Keep `git blame` focused on behavior changes.
+#
+# To make these revisions ignored locally:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style(frontend): apply Prettier formatting
+b250ea0061b4fe369f333e263339873016aad746
+
+# style(rust): apply rustfmt formatting
+aa6bf276a5a2dc2c56951c422d206676c5ba1bef

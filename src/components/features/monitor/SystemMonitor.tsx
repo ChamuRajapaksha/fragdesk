@@ -1,11 +1,38 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { Cpu, MemoryStick, Activity, Bell, X, LayoutGrid, ArrowUp, ArrowDown, Eye, EyeOff, Gauge, Gpu, type LucideIcon } from 'lucide-react';
-import { extractErrorMessage, isSupabaseConfigured, supabase } from '../../../community/supabaseClient';
-import { useAuth } from '../../../community/useAuth';
-import { Button, ErrorBanner, LoadingState, PageHeader, StatCard } from '../../ui';
-import type { NavId } from '../../../features/registry';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+} from "recharts";
+import {
+  Cpu,
+  MemoryStick,
+  Activity,
+  Bell,
+  X,
+  LayoutGrid,
+  ArrowUp,
+  ArrowDown,
+  Eye,
+  EyeOff,
+  Gauge,
+  Gpu,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  extractErrorMessage,
+  isSupabaseConfigured,
+  supabase,
+} from "../../../community/supabaseClient";
+import { useAuth } from "../../../community/useAuth";
+import { useDataWiped } from "../../../features/dataEvents";
+import { Button, ErrorBanner, LoadingState, PageHeader, StatCard } from "../../ui";
+import type { NavId } from "../../../features/registry";
 
 interface SystemMonitorProps {
   setActiveTab: (tab: NavId) => void;
@@ -29,8 +56,8 @@ interface DataPoint {
 interface AlertRule {
   id: string;
   name: string;
-  metric: 'cpu' | 'ram' | 'gpu';
-  comparison: 'above' | 'below';
+  metric: "cpu" | "ram" | "gpu";
+  comparison: "above" | "below";
   threshold: number;
   enabled: boolean;
   source: string | null;
@@ -59,6 +86,11 @@ interface FpsStats {
   sample_count: number;
 }
 
+interface FpsTrackingStatus {
+  process_id: number | null;
+  process_name: string | null;
+}
+
 interface GpuStats {
   name: string;
   usage_percent: number;
@@ -68,32 +100,30 @@ interface GpuStats {
 }
 
 const WIDGET_LABELS: Record<string, string> = {
-  stats: 'Stats Cards (CPU, RAM, GPU, Status)',
-  alerts: 'Alert Rules Panel',
-  cpu_graph: 'CPU Usage Graph',
-  ram_graph: 'RAM Usage Graph',
-  gpu_graph: 'GPU Usage Graph',
-  fps: 'FPS / 1% Lows (via RTSS)',
+  stats: "Stats Cards (CPU, RAM, GPU, Status)",
+  alerts: "Alert Rules Panel",
+  cpu_graph: "CPU Usage Graph",
+  ram_graph: "RAM Usage Graph",
+  gpu_graph: "GPU Usage Graph",
+  fps: "FPS / 1% Lows (via RTSS)",
 };
 
 const TOOLTIP_STYLE = {
-  backgroundColor: 'rgb(var(--frag-surface))',
-  border: '1px solid rgb(var(--frag-border))',
-  borderRadius: '8px',
-  color: 'rgb(var(--frag-text))',
+  backgroundColor: "rgb(var(--frag-surface))",
+  border: "1px solid rgb(var(--frag-border))",
+  borderRadius: "8px",
+  color: "rgb(var(--frag-text))",
 };
 
 // Theme colors are stored as bare RGB triplets ("0 217 255"); SVG attributes
 // (stroke/fill/stopColor) need a concrete color, so resolve once per render.
 function resolveColor(variable: string): string {
-  const raw = getComputedStyle(document.documentElement)
-    .getPropertyValue(variable)
-    .trim();
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(variable).trim();
   const parts = raw.split(/\s+/).map((p) => Number(p));
   if (parts.length === 3 && parts.every((p) => !Number.isNaN(p))) {
-    return `rgb(${parts.join(', ')})`;
+    return `rgb(${parts.join(", ")})`;
   }
-  return raw || 'currentColor';
+  return raw || "currentColor";
 }
 
 function GraphCard({
@@ -107,15 +137,15 @@ function GraphCard({
 }: {
   title: string;
   icon: LucideIcon;
-  dataKey: 'cpu' | 'ram' | 'gpu';
+  dataKey: "cpu" | "ram" | "gpu";
   colorVar: string;
   gradientId: string;
   iconClass: string;
   data: DataPoint[];
 }) {
   const lineColor = resolveColor(colorVar);
-  const mutedColor = resolveColor('--frag-muted');
-  const borderColor = resolveColor('--frag-border');
+  const mutedColor = resolveColor("--frag-muted");
+  const borderColor = resolveColor("--frag-border");
   return (
     <div className="bg-frag-surface border border-frag-border rounded-lg p-4 md:p-6">
       <h3 className="text-xl font-bold text-frag-text mb-4 flex items-center gap-2">
@@ -151,6 +181,7 @@ function GraphCard({
             stroke={lineColor}
             strokeWidth={2}
             fill={`url(#${gradientId})`}
+            isAnimationActive={false}
           />
         </AreaChart>
       </ResponsiveContainer>
@@ -166,9 +197,9 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [showRuleForm, setShowRuleForm] = useState(false);
-  const [ruleName, setRuleName] = useState('');
-  const [ruleMetric, setRuleMetric] = useState<'cpu' | 'ram' | 'gpu'>('cpu');
-  const [ruleComparison, setRuleComparison] = useState<'above' | 'below'>('above');
+  const [ruleName, setRuleName] = useState("");
+  const [ruleMetric, setRuleMetric] = useState<"cpu" | "ram" | "gpu">("cpu");
+  const [ruleComparison, setRuleComparison] = useState<"above" | "below">("above");
   const [ruleThreshold, setRuleThreshold] = useState(90);
   const [error, setError] = useState<string | null>(null);
   const [firedAlerts, setFiredAlerts] = useState<FiredAlert[]>([]);
@@ -179,7 +210,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   const [showCustomize, setShowCustomize] = useState(false);
   const [sharingLayout, setSharingLayout] = useState(false);
   const [layoutShared, setLayoutShared] = useState(false);
-  const [layoutNameDraft, setLayoutNameDraft] = useState('');
+  const [layoutNameDraft, setLayoutNameDraft] = useState("");
 
   // FPS / 1% lows tracking
   const [rtssApps, setRtssApps] = useState<RtssAppSummary[]>([]);
@@ -193,29 +224,67 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   // GPU utilization / VRAM
   const [gpuStats, setGpuStats] = useState<GpuStats | null>(null);
 
+  // Bumping this re-runs the initial load effect after a factory reset.
+  const [reloadToken, setReloadToken] = useState(0);
+
   const triggeredRef = useRef<Set<string>>(new Set());
   const rulesRef = useRef<AlertRule[]>([]);
   // Mirror of gpuStats that the 1s polling closure can read without
   // stale-state issues (the interval captures the first render's state).
   const gpuStatsRef = useRef<GpuStats | null>(null);
+  // Same idea for the FPS target, so idle ticks can skip the backend call.
+  const selectedPidRef = useRef<number | null>(null);
+  // Prevents a slow tick from overlapping the next one.
+  const pollingRef = useRef(false);
+
+  useDataWiped(
+    useCallback(() => {
+      setSelectedPid(null);
+      setSelectedName(null);
+      setFpsStats(null);
+      setRules([]);
+      setLayout([]);
+      setHistory([]);
+      setFiredAlerts([]);
+      setSharedRuleIds(new Set());
+      setLayoutShared(false);
+      setShowAppPicker(false);
+      setError(null);
+      setReloadToken((value) => value + 1);
+    }, []),
+  );
 
   useEffect(() => {
     loadStats();
     loadRules();
     loadLayout();
 
+    invoke<FpsTrackingStatus>("get_fps_tracking_status")
+      .then((status) => {
+        setSelectedPid(status.process_id);
+        setSelectedName(status.process_name);
+      })
+      .catch(() => {});
+
     setIsMonitoring(true);
     const interval = setInterval(() => {
-      loadStats();
-      loadGpuStats();
-      loadFpsStats();
+      if (document.visibilityState === "hidden" || pollingRef.current) return;
+      pollingRef.current = true;
+      const fps = selectedPidRef.current !== null ? loadFpsStats() : Promise.resolve();
+      Promise.allSettled([loadStats(), loadGpuStats(), fps]).finally(() => {
+        pollingRef.current = false;
+      });
     }, 1000);
 
     return () => {
       clearInterval(interval);
       setIsMonitoring(false);
     };
-  }, []);
+  }, [reloadToken]);
+
+  useEffect(() => {
+    selectedPidRef.current = selectedPid;
+  }, [selectedPid]);
 
   useEffect(() => {
     rulesRef.current = rules;
@@ -225,46 +294,47 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   useEffect(() => {
     if (!showCustomize) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setShowCustomize(false);
+      if (e.key === "Escape") setShowCustomize(false);
     }
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [showCustomize]);
 
   const loadRules = async () => {
     try {
-      const result = await invoke<AlertRule[]>('get_alert_rules');
+      const result = await invoke<AlertRule[]>("get_alert_rules");
       setRules(result);
     } catch (err) {
-      console.error('Failed to load alert rules:', err);
+      console.error("Failed to load alert rules:", err);
     }
   };
 
   const loadLayout = async () => {
     try {
-      const result = await invoke<WidgetConfig[]>('get_monitor_layout');
+      const result = await invoke<WidgetConfig[]>("get_monitor_layout");
       setLayout(result);
     } catch (err) {
-      console.error('Failed to load monitor layout:', err);
+      console.error("Failed to load monitor layout:", err);
     }
   };
 
   async function loadFpsStats() {
+    if (selectedPidRef.current === null) return;
     try {
-      const stats = await invoke<FpsStats | null>('get_fps_stats');
+      const stats = await invoke<FpsStats | null>("get_fps_stats");
       setFpsStats(stats);
     } catch (err) {
-      console.error('Failed to load FPS stats:', err);
+      console.error("Failed to load FPS stats:", err);
     }
   }
 
   async function loadGpuStats() {
     try {
-      const stats = await invoke<GpuStats | null>('get_gpu_stats');
+      const stats = await invoke<GpuStats | null>("get_gpu_stats");
       setGpuStats(stats);
       gpuStatsRef.current = stats;
     } catch (err) {
-      console.error('Failed to load GPU stats:', err);
+      console.error("Failed to load GPU stats:", err);
     }
   }
 
@@ -272,7 +342,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     setLoadingApps(true);
     setRtssError(null);
     try {
-      const apps = await invoke<RtssAppSummary[]>('list_rtss_apps');
+      const apps = await invoke<RtssAppSummary[]>("list_rtss_apps");
       setRtssApps(apps);
     } catch (err) {
       setRtssError(extractErrorMessage(err));
@@ -289,7 +359,10 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   async function handleSelectApp(app: RtssAppSummary) {
     try {
-      await invoke('set_fps_tracking_target', { processId: app.process_id });
+      await invoke("set_fps_tracking_target", {
+        processId: app.process_id,
+        processName: app.name,
+      });
       setSelectedPid(app.process_id);
       setSelectedName(app.name);
       setShowAppPicker(false);
@@ -301,7 +374,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   async function handleStopTracking() {
     try {
-      await invoke('set_fps_tracking_target', { processId: null });
+      await invoke("set_fps_tracking_target", { processId: null, processName: null });
       setSelectedPid(null);
       setSelectedName(null);
       setFpsStats(null);
@@ -313,7 +386,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   async function persistLayout(newLayout: WidgetConfig[]) {
     setLayout(newLayout);
     try {
-      const applied = await invoke<WidgetConfig[]>('set_monitor_layout', { widgets: newLayout });
+      const applied = await invoke<WidgetConfig[]>("set_monitor_layout", { widgets: newLayout });
       setLayout(applied);
     } catch (err) {
       setError(extractErrorMessage(err));
@@ -338,14 +411,14 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   async function resetLayout() {
     try {
       const defaults: WidgetConfig[] = [
-        { id: 'stats', visible: true },
-        { id: 'alerts', visible: true },
-        { id: 'cpu_graph', visible: true },
-        { id: 'ram_graph', visible: true },
-        { id: 'gpu_graph', visible: true },
-        { id: 'fps', visible: true },
+        { id: "stats", visible: true },
+        { id: "alerts", visible: true },
+        { id: "cpu_graph", visible: true },
+        { id: "ram_graph", visible: true },
+        { id: "gpu_graph", visible: true },
+        { id: "fps", visible: true },
       ];
-      const applied = await invoke<WidgetConfig[]>('set_monitor_layout', { widgets: defaults });
+      const applied = await invoke<WidgetConfig[]>("set_monitor_layout", { widgets: defaults });
       setLayout(applied);
     } catch (err) {
       setError(extractErrorMessage(err));
@@ -358,7 +431,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       return;
     }
     if (!user) {
-      setActiveTab('community');
+      setActiveTab("community");
       return;
     }
     if (!supabase) return;
@@ -368,7 +441,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     setSharingLayout(true);
     setError(null);
     try {
-      const json = await invoke<string>('export_monitor_layout_json', { name });
+      const json = await invoke<string>("export_monitor_layout_json", { name });
       const fragment = JSON.parse(json) as {
         fragment_type: string;
         name: string;
@@ -377,7 +450,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         payload: unknown;
       };
 
-      const { error: insertError } = await supabase.from('fragments').insert({
+      const { error: insertError } = await supabase.from("fragments").insert({
         fragment_type: fragment.fragment_type,
         name: fragment.name,
         tags: fragment.tags,
@@ -388,7 +461,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
       if (insertError) throw insertError;
       setLayoutShared(true);
-      setLayoutNameDraft('');
+      setLayoutNameDraft("");
     } catch (err) {
       setError(extractErrorMessage(err));
     } finally {
@@ -397,7 +470,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
   }
 
   function evaluateRules(currentStats: SystemStats) {
-    const values: Record<'cpu' | 'ram' | 'gpu', number> = {
+    const values: Record<"cpu" | "ram" | "gpu", number> = {
       cpu: currentStats.cpu_usage,
       ram: currentStats.ram_percent,
       gpu: gpuStatsRef.current?.usage_percent ?? 0,
@@ -406,16 +479,15 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     for (const rule of rulesRef.current) {
       if (!rule.enabled) continue;
       // Never fire a GPU rule while no GPU is present/detected.
-      if (rule.metric === 'gpu' && !gpuStatsRef.current) continue;
+      if (rule.metric === "gpu" && !gpuStatsRef.current) continue;
       const value = values[rule.metric];
       const isTriggered =
-        rule.comparison === 'above' ? value > rule.threshold : value < rule.threshold;
+        rule.comparison === "above" ? value > rule.threshold : value < rule.threshold;
       const wasTriggered = triggeredRef.current.has(rule.id);
 
       if (isTriggered && !wasTriggered) {
         triggeredRef.current.add(rule.id);
-        const metricLabel =
-          rule.metric === 'cpu' ? 'CPU' : rule.metric === 'ram' ? 'RAM' : 'GPU';
+        const metricLabel = rule.metric === "cpu" ? "CPU" : rule.metric === "ram" ? "RAM" : "GPU";
         setFiredAlerts((prev) => [
           ...prev,
           {
@@ -431,19 +503,19 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   const loadStats = async () => {
     try {
-      const result = await invoke<SystemStats>('get_system_stats');
+      const result = await invoke<SystemStats>("get_system_stats");
       setStats(result);
       evaluateRules(result);
 
       const now = new Date();
-      const timeStr = now.toLocaleTimeString('en-US', {
+      const timeStr = now.toLocaleTimeString("en-US", {
         hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
       });
 
-      setHistory(prev => {
+      setHistory((prev) => {
         const point: DataPoint = {
           time: timeStr,
           cpu: result.cpu_usage,
@@ -456,7 +528,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         return newHistory.slice(-60);
       });
     } catch (error) {
-      console.error('Failed to get system stats:', error);
+      console.error("Failed to get system stats:", error);
     }
   };
 
@@ -464,13 +536,13 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     e.preventDefault();
     if (!ruleName.trim()) return;
     try {
-      await invoke('create_alert_rule', {
+      await invoke("create_alert_rule", {
         name: ruleName.trim(),
         metric: ruleMetric,
         comparison: ruleComparison,
         threshold: ruleThreshold,
       });
-      setRuleName('');
+      setRuleName("");
       setShowRuleForm(false);
       await loadRules();
     } catch (err) {
@@ -480,7 +552,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   async function handleDeleteRule(id: string) {
     try {
-      await invoke('delete_alert_rule', { id });
+      await invoke("delete_alert_rule", { id });
       triggeredRef.current.delete(id);
       await loadRules();
     } catch (err) {
@@ -490,7 +562,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   async function handleToggleRule(id: string) {
     try {
-      await invoke('toggle_alert_rule', { id });
+      await invoke("toggle_alert_rule", { id });
       await loadRules();
     } catch (err) {
       setError(extractErrorMessage(err));
@@ -503,7 +575,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       return;
     }
     if (!user) {
-      setActiveTab('community');
+      setActiveTab("community");
       return;
     }
     if (!supabase) return;
@@ -511,7 +583,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     setSharingRuleId(rule.id);
     setError(null);
     try {
-      const json = await invoke<string>('export_alert_rule_json', { id: rule.id });
+      const json = await invoke<string>("export_alert_rule_json", { id: rule.id });
       const fragment = JSON.parse(json) as {
         fragment_type: string;
         name: string;
@@ -520,7 +592,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         payload: unknown;
       };
 
-      const { error: insertError } = await supabase.from('fragments').insert({
+      const { error: insertError } = await supabase.from("fragments").insert({
         fragment_type: fragment.fragment_type,
         name: fragment.name,
         tags: fragment.tags,
@@ -550,7 +622,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
 
   const formatBytes = (bytes: number) => {
     const gb = bytes / (1024 * 1024 * 1024);
-    return gb.toFixed(2) + ' GB';
+    return gb.toFixed(2) + " GB";
   };
 
   if (!stats) {
@@ -599,7 +671,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         <StatCard
           icon={Activity}
           label="Monitoring"
-          value={isMonitoring ? 'Active' : 'Paused'}
+          value={isMonitoring ? "Active" : "Paused"}
           accent="text-frag-success"
           detail={`Update every 1s · ${history.length} data points`}
         />
@@ -617,12 +689,15 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
             onClick={() => setShowRuleForm((v) => !v)}
             className="px-3 py-1.5 rounded-lg bg-frag-primary text-frag-bg text-sm font-semibold hover:bg-frag-primary/90"
           >
-            {showRuleForm ? 'Cancel' : '+ Add Rule'}
+            {showRuleForm ? "Cancel" : "+ Add Rule"}
           </button>
         </div>
 
         {showRuleForm && (
-          <form onSubmit={handleCreateRule} className="flex flex-wrap items-end gap-3 mb-4 pb-4 border-b border-frag-border">
+          <form
+            onSubmit={handleCreateRule}
+            className="flex flex-wrap items-end gap-3 mb-4 pb-4 border-b border-frag-border"
+          >
             <div className="min-w-0">
               <label className="text-xs text-frag-muted block mb-1">Name</label>
               <input
@@ -638,7 +713,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
               <label className="text-xs text-frag-muted block mb-1">Metric</label>
               <select
                 value={ruleMetric}
-                onChange={(e) => setRuleMetric(e.target.value as 'cpu' | 'ram' | 'gpu')}
+                onChange={(e) => setRuleMetric(e.target.value as "cpu" | "ram" | "gpu")}
                 className="bg-frag-bg border border-frag-border rounded-lg px-3 py-1.5 text-sm text-frag-text"
               >
                 <option value="cpu">CPU</option>
@@ -650,7 +725,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
               <label className="text-xs text-frag-muted block mb-1">Condition</label>
               <select
                 value={ruleComparison}
-                onChange={(e) => setRuleComparison(e.target.value as 'above' | 'below')}
+                onChange={(e) => setRuleComparison(e.target.value as "above" | "below")}
                 className="bg-frag-bg border border-frag-border rounded-lg px-3 py-1.5 text-sm text-frag-text"
               >
                 <option value="above">Above</option>
@@ -668,7 +743,10 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                 className="bg-frag-bg border border-frag-border rounded-lg px-3 py-1.5 text-sm text-frag-text w-24"
               />
             </div>
-            <button type="submit" className="px-4 py-1.5 rounded-lg bg-frag-success text-frag-bg text-sm font-semibold">
+            <button
+              type="submit"
+              className="px-4 py-1.5 rounded-lg bg-frag-success text-frag-bg text-sm font-semibold"
+            >
               Create
             </button>
           </form>
@@ -679,19 +757,26 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         ) : (
           <div className="space-y-2">
             {rules.map((rule) => (
-              <div key={rule.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-4 py-2.5 gap-3">
+              <div
+                key={rule.id}
+                className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-4 py-2.5 gap-3"
+              >
                 <div className="flex items-center gap-3 min-w-0">
                   <button
                     onClick={() => handleToggleRule(rule.id)}
-                    className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${rule.enabled ? 'bg-frag-success' : 'bg-frag-border'}`}
+                    className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${rule.enabled ? "bg-frag-success" : "bg-frag-border"}`}
                   >
-                    <span className={`absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-frag-text transition-transform ${rule.enabled ? 'translate-x-[16px]' : 'translate-x-0'}`} />
+                    <span
+                      className={`absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-frag-text transition-transform ${rule.enabled ? "translate-x-[16px]" : "translate-x-0"}`}
+                    />
                   </button>
                   <div className="min-w-0">
                     <p className="text-sm text-frag-text font-medium truncate">{rule.name}</p>
                     <p className="text-xs text-frag-muted truncate">
                       {rule.metric.toUpperCase()} {rule.comparison} {rule.threshold}%
-                      {rule.source === 'community' && <span className="ml-2 text-frag-accent">from community</span>}
+                      {rule.source === "community" && (
+                        <span className="ml-2 text-frag-accent">from community</span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -704,7 +789,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                       disabled={sharingRuleId === rule.id}
                       className="text-xs px-2 py-1 rounded-lg bg-frag-primary/10 text-frag-primary hover:bg-frag-primary/20 disabled:opacity-40"
                     >
-                      {sharingRuleId === rule.id ? '...' : 'Share'}
+                      {sharingRuleId === rule.id ? "..." : "Share"}
                     </button>
                   )}
                   <button
@@ -777,8 +862,8 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         {selectedPid === null ? (
           <div>
             <p className="text-sm text-frag-muted mb-3 break-words">
-              Requires RTSS (or MSI Afterburner) to be installed, running, and hooked into a
-              game. FragDesk reads RTSS's frame-timing data — it doesn't hook games directly.
+              Requires RTSS (or MSI Afterburner) to be installed, running, and hooked into a game.
+              FragDesk reads RTSS's frame-timing data — it doesn't hook games directly.
             </p>
             <button
               onClick={handleOpenAppPicker}
@@ -823,7 +908,9 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                         className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-frag-surface text-frag-text flex items-center gap-2 min-w-0"
                       >
                         <span className="truncate">{app.name}</span>
-                        <span className="text-frag-muted text-xs shrink-0">PID {app.process_id}</span>
+                        <span className="text-frag-muted text-xs shrink-0">
+                          PID {app.process_id}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -834,7 +921,8 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
         ) : (
           <div>
             <p className="text-xs text-frag-muted mb-3">
-              Tracking: <span className="text-frag-text">{selectedName ?? `PID ${selectedPid}`}</span>
+              Tracking:{" "}
+              <span className="text-frag-text">{selectedName ?? `PID ${selectedPid}`}</span>
             </p>
             {fpsStats === null ? (
               <p className="text-sm text-frag-muted">Waiting for frame data...</p>
@@ -848,9 +936,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                 </div>
                 <div className="overflow-hidden whitespace-nowrap min-w-0">
                   <p className="text-xs text-frag-muted">Average</p>
-                  <p className="text-2xl font-bold text-frag-text">
-                    {fpsStats.avg_fps.toFixed(0)}
-                  </p>
+                  <p className="text-2xl font-bold text-frag-text">{fpsStats.avg_fps.toFixed(0)}</p>
                 </div>
                 <div className="overflow-hidden whitespace-nowrap min-w-0">
                   <p className="text-xs text-frag-muted">1% Low</p>
@@ -875,9 +961,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
     <div className="min-h-full bg-frag-bg text-frag-text p-4 md:p-6">
       <PageHeader
         title="System Monitor"
-        subtitle={
-          isMonitoring ? 'Real-time system performance monitoring' : 'Monitoring paused'
-        }
+        subtitle={isMonitoring ? "Real-time system performance monitoring" : "Monitoring paused"}
         accent={<Activity size={22} className="text-frag-primary" />}
         actions={
           <Button variant="secondary" onClick={() => setShowCustomize((v) => !v)}>
@@ -912,21 +996,36 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
               </button>
             </div>
             {layout.map((w, i) => (
-              <div key={w.id} className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-3 py-2 gap-2">
-                <span className={`text-sm min-w-0 truncate ${w.visible ? 'text-frag-text' : 'text-frag-muted line-through'}`}>
+              <div
+                key={w.id}
+                className="flex items-center justify-between bg-frag-bg border border-frag-border rounded-lg px-3 py-2 gap-2"
+              >
+                <span
+                  className={`text-sm min-w-0 truncate ${w.visible ? "text-frag-text" : "text-frag-muted line-through"}`}
+                >
                   {WIDGET_LABELS[w.id] ?? w.id}
                 </span>
                 <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => moveWidget(w.id, -1)} disabled={i === 0} aria-label={`Move ${WIDGET_LABELS[w.id] ?? w.id} up`} className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted">
+                  <button
+                    onClick={() => moveWidget(w.id, -1)}
+                    disabled={i === 0}
+                    aria-label={`Move ${WIDGET_LABELS[w.id] ?? w.id} up`}
+                    className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted"
+                  >
                     <ArrowUp size={14} />
                   </button>
-                  <button onClick={() => moveWidget(w.id, 1)} disabled={i === layout.length - 1} aria-label={`Move ${WIDGET_LABELS[w.id] ?? w.id} down`} className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted">
+                  <button
+                    onClick={() => moveWidget(w.id, 1)}
+                    disabled={i === layout.length - 1}
+                    aria-label={`Move ${WIDGET_LABELS[w.id] ?? w.id} down`}
+                    className="p-1.5 rounded hover:bg-frag-surface disabled:opacity-30 text-frag-muted"
+                  >
                     <ArrowDown size={14} />
                   </button>
                   <button
                     onClick={() => toggleWidgetVisibility(w.id)}
                     aria-pressed={w.visible}
-                    aria-label={`${w.visible ? 'Hide' : 'Show'} ${WIDGET_LABELS[w.id] ?? w.id}`}
+                    aria-label={`${w.visible ? "Hide" : "Show"} ${WIDGET_LABELS[w.id] ?? w.id}`}
                     className="p-1.5 rounded hover:bg-frag-surface text-frag-muted"
                   >
                     {w.visible ? <Eye size={14} /> : <EyeOff size={14} />}
@@ -935,7 +1034,10 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
               </div>
             ))}
             <div className="flex items-center justify-between pt-2 border-t border-frag-border gap-2">
-              <button onClick={resetLayout} className="text-xs text-frag-muted hover:text-frag-text shrink-0">
+              <button
+                onClick={resetLayout}
+                className="text-xs text-frag-muted hover:text-frag-text shrink-0"
+              >
                 Reset to default
               </button>
               <div className="flex items-center gap-2 min-w-0">
@@ -955,7 +1057,7 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
                       disabled={sharingLayout || !layoutNameDraft.trim()}
                       className="text-xs px-2 py-1 rounded-lg bg-frag-primary text-frag-bg font-medium disabled:opacity-40 shrink-0"
                     >
-                      {sharingLayout ? '...' : 'Share layout'}
+                      {sharingLayout ? "..." : "Share layout"}
                     </button>
                   </>
                 )}
@@ -968,12 +1070,19 @@ export default function SystemMonitor({ setActiveTab }: SystemMonitorProps) {
       {firedAlerts.length > 0 && (
         <div className="space-y-2 mb-6" aria-live="polite">
           {firedAlerts.map((alert, i) => (
-            <div key={`${alert.ruleId}-${i}`} className="flex items-center justify-between bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-3 gap-3">
+            <div
+              key={`${alert.ruleId}-${i}`}
+              className="flex items-center justify-between bg-frag-danger/10 border border-frag-danger/40 text-frag-danger text-sm rounded-lg px-4 py-3 gap-3"
+            >
               <span className="flex items-center gap-2 min-w-0 break-words">
                 <Bell size={16} className="shrink-0" />
                 {alert.message}
               </span>
-              <button onClick={() => dismissAlert(alert.ruleId)} aria-label="Dismiss alert" className="hover:text-frag-text shrink-0">
+              <button
+                onClick={() => dismissAlert(alert.ruleId)}
+                aria-label="Dismiss alert"
+                className="hover:text-frag-text shrink-0"
+              >
                 <X size={16} />
               </button>
             </div>

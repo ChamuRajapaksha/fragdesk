@@ -29,8 +29,7 @@ fn compose_stats(
         return None;
     }
     let usage_percent = usage_percent.clamp(0.0, 100.0);
-    let memory_percent =
-        ((vram_used as f64 / vram_total as f64) * 100.0).clamp(0.0, 100.0) as f32;
+    let memory_percent = ((vram_used as f64 / vram_total as f64) * 100.0).clamp(0.0, 100.0) as f32;
 
     Some(GpuStats {
         name,
@@ -60,9 +59,8 @@ mod windows_impl {
     use windows::core::{Interface, PCWSTR};
     use windows::Win32::Foundation::ERROR_SUCCESS;
     use windows::Win32::Graphics::Dxgi::{
-        CreateDXGIFactory2, DXGI_ADAPTER_DESC1, DXGI_ADAPTER_FLAG_SOFTWARE,
-        DXGI_MEMORY_SEGMENT_GROUP_LOCAL, DXGI_QUERY_VIDEO_MEMORY_INFO, IDXGIAdapter1,
-        IDXGIAdapter3, IDXGIFactory4,
+        CreateDXGIFactory2, IDXGIAdapter1, IDXGIAdapter3, IDXGIFactory4, DXGI_ADAPTER_DESC1,
+        DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, DXGI_QUERY_VIDEO_MEMORY_INFO,
     };
     use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
     use windows::Win32::System::Performance::{
@@ -84,9 +82,14 @@ mod windows_impl {
     }
 
     pub fn get_gpu_stats() -> Result<Option<GpuStats>, String> {
-        let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.ok();
+        // Only uninitialize COM if this thread actually initialized it. A
+        // failed CoInitializeEx (e.g. RPC_E_CHANGED_MODE) must not be paired
+        // with CoUninitialize, which would tear down someone else's state.
+        let initialized = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
         let result = get_gpu_stats_inner();
-        unsafe { CoUninitialize() };
+        if initialized {
+            unsafe { CoUninitialize() };
+        }
         result
     }
 
@@ -115,8 +118,9 @@ mod windows_impl {
     /// Basic Render Driver / WARP / Remote Display / GDK adapters are
     /// all Microsoft-signed stubs that report no meaningful counters.
     fn primary_adapter() -> Result<Option<AdapterInfo>, String> {
-        let factory: IDXGIFactory4 = unsafe { CreateDXGIFactory2::<IDXGIFactory4>(Default::default()) }
-            .map_err(|e| format!("failed to create DXGI factory: {e}"))?;
+        let factory: IDXGIFactory4 =
+            unsafe { CreateDXGIFactory2::<IDXGIFactory4>(Default::default()) }
+                .map_err(|e| format!("failed to create DXGI factory: {e}"))?;
 
         let mut index: u32 = 0;
         loop {
@@ -221,21 +225,36 @@ mod windows_impl {
             return Ok(0.0);
         }
 
-        let items = read_formatted_items(counter)?;
-        Ok(aggregate_usage(&items, luid_high, luid_low))
+        let (items, buffer_len) = read_formatted_items(counter)?;
+        Ok(aggregate_usage_bounded(
+            &items, buffer_len, luid_high, luid_low,
+        ))
     }
 
-    fn read_formatted_items(counter: isize) -> Result<Vec<PDH_FMT_COUNTERVALUE_ITEM_W>, String> {
+    /// Returns the item array plus the byte length of the buffer PDH wrote
+    /// into. Instance-name pointers live inside that buffer, so callers
+    /// must bound their string reads by it.
+    fn read_formatted_items(
+        counter: isize,
+    ) -> Result<(Vec<PDH_FMT_COUNTERVALUE_ITEM_W>, usize), String> {
         let mut buffer_size: u32 = 0;
         let mut item_count: u32 = 0;
         let status = unsafe {
-            PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &mut buffer_size, &mut item_count, None)
+            PdhGetFormattedCounterArrayW(
+                counter,
+                PDH_FMT_DOUBLE,
+                &mut buffer_size,
+                &mut item_count,
+                None,
+            )
         };
         if status != ERROR_SUCCESS.0 && status != PDH_MORE_DATA {
             if status == PDH_NO_DATA {
-                return Ok(Vec::new());
+                return Ok((Vec::new(), 0));
             }
-            return Err(format!("failed to size GPU Engine counter buffer: 0x{status:08x}"));
+            return Err(format!(
+                "failed to size GPU Engine counter buffer: 0x{status:08x}"
+            ));
         }
 
         let buf_items = (buffer_size as usize)
@@ -254,11 +273,13 @@ mod windows_impl {
             )
         };
         if status != ERROR_SUCCESS.0 {
-            return Err(format!("failed to read GPU Engine counter data: 0x{status:08x}"));
+            return Err(format!(
+                "failed to read GPU Engine counter data: 0x{status:08x}"
+            ));
         }
 
         items.truncate(item_count as usize);
-        Ok(items)
+        Ok((items, buffer_size as usize))
     }
 
     /// Sums utilization across every engine instance whose instance name
@@ -266,7 +287,15 @@ mod windows_impl {
     /// `pid_2616_luid_0x00000000_0x00011372_phys_0_eng_2_engtype_3D`;
     /// the `luid_0x<high>_0x<low>` fragment is the only per-adapter
     /// unique identifier (phys_n is NOT unique across adapters).
-    fn aggregate_usage(items: &[PDH_FMT_COUNTERVALUE_ITEM_W], luid_high: i32, luid_low: u32) -> f32 {
+    fn aggregate_usage_with<F>(
+        items: &[PDH_FMT_COUNTERVALUE_ITEM_W],
+        luid_high: i32,
+        luid_low: u32,
+        mut name_of: F,
+    ) -> f32
+    where
+        F: FnMut(&PDH_FMT_COUNTERVALUE_ITEM_W) -> String,
+    {
         let needle = format!("luid_0x{:08x}_0x{:08x}", luid_high, luid_low);
         let mut total: f64 = 0.0;
 
@@ -278,7 +307,7 @@ mod windows_impl {
             if !value.is_finite() || value < 0.0 {
                 continue;
             }
-            let name = unsafe { read_wide_cstring(item.szName.as_ptr()) };
+            let name = name_of(item);
             if !name.to_ascii_lowercase().contains(&needle) {
                 continue;
             }
@@ -290,6 +319,29 @@ mod windows_impl {
         total.min(100.0) as f32
     }
 
+    /// Like `aggregate_usage_with`, but bounds every instance-name read to
+    /// the actual PDH buffer. Without this, a buffer whose last name lacks
+    /// a terminating NUL could make the scan walk into unmapped memory.
+    fn aggregate_usage_bounded(
+        items: &[PDH_FMT_COUNTERVALUE_ITEM_W],
+        buffer_len: usize,
+        luid_high: i32,
+        luid_low: u32,
+    ) -> f32 {
+        let base = items.as_ptr() as usize;
+        let end = base.saturating_add(buffer_len);
+
+        aggregate_usage_with(items, luid_high, luid_low, |item| {
+            let ptr = item.szName.as_ptr() as usize;
+            if ptr < base || ptr >= end {
+                return String::new();
+            }
+
+            let available_units = (end - ptr) / std::mem::size_of::<u16>();
+            unsafe { read_wide_cstring(item.szName.as_ptr(), available_units) }
+        })
+    }
+
     fn to_wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
@@ -299,15 +351,14 @@ mod windows_impl {
         String::from_utf16_lossy(&wide[..end])
     }
 
-    unsafe fn read_wide_cstring(ptr: *const u16) -> String {
-        if ptr.is_null() {
+    unsafe fn read_wide_cstring(ptr: *const u16, max_len: usize) -> String {
+        if ptr.is_null() || max_len == 0 {
             return String::new();
         }
         let mut len = 0usize;
-        while *ptr.add(len) != 0 {
+        while len < max_len && *ptr.add(len) != 0 {
             len += 1;
         }
-        let len = len.min(MAX_INSTANCES);
         String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len))
     }
 
@@ -333,6 +384,39 @@ mod windows_impl {
             ))
         }
 
+        fn total_usage(
+            items: &[PDH_FMT_COUNTERVALUE_ITEM_W],
+            luid_high: i32,
+            luid_low: u32,
+        ) -> f32 {
+            aggregate_usage_with(items, luid_high, luid_low, |item| unsafe {
+                read_wide_cstring(item.szName.as_ptr(), MAX_INSTANCES)
+            })
+        }
+
+        #[test]
+        fn read_wide_cstring_stops_at_max_len_when_unterminated() {
+            let buf = [b'A' as u16; 8];
+            let value = unsafe { read_wide_cstring(buf.as_ptr(), 8) };
+            assert_eq!(value.len(), 8);
+        }
+
+        #[test]
+        fn read_wide_cstring_stops_at_terminator_before_max_len() {
+            let buf = [b'O' as u16, b'K' as u16, 0, b'X' as u16];
+            let value = unsafe { read_wide_cstring(buf.as_ptr(), buf.len()) };
+            assert_eq!(value, "OK");
+        }
+
+        #[test]
+        fn bounded_aggregation_rejects_names_outside_the_buffer() {
+            let name = engine_name(0);
+            let items = vec![item(&name, 50.0, PDH_CSTATUS_VALID_DATA)];
+            // The name lives in a separate allocation, so it is outside the
+            // simulated PDH item buffer and must not be read.
+            assert_eq!(aggregate_usage_bounded(&items, 8, 0, 0x00011372), 0.0);
+        }
+
         #[test]
         fn sums_only_matching_adapter_luid_engines() {
             let matching_a = to_wide("pid_1_luid_0x00000000_0x00011372_phys_0_eng_0_engtype_3D");
@@ -344,7 +428,7 @@ mod windows_impl {
                 // Different adapter LUID -- must NOT contribute.
                 item(&unrelated, 90.0, PDH_CSTATUS_VALID_DATA),
             ];
-            let total = aggregate_usage(&items, 0, 0x00011372);
+            let total = total_usage(&items, 0, 0x00011372);
             assert!((total - 75.0).abs() < 0.001);
         }
 
@@ -356,7 +440,7 @@ mod windows_impl {
                 item(&a, 60.0, PDH_CSTATUS_VALID_DATA),
                 item(&b, 55.0, PDH_CSTATUS_VALID_DATA),
             ];
-            assert_eq!(aggregate_usage(&items, 0, 0x00011372), 100.0);
+            assert_eq!(total_usage(&items, 0, 0x00011372), 100.0);
         }
 
         #[test]
@@ -370,14 +454,14 @@ mod windows_impl {
             // driver glitch that should be dropped, not subtracted.
             let negative = item(&engine_name(1), -1.0, PDH_CSTATUS_VALID_DATA);
             let items = vec![not_valid, negative];
-            assert_eq!(aggregate_usage(&items, 0, 0x00011372), 0.0);
+            assert_eq!(total_usage(&items, 0, 0x00011372), 0.0);
         }
 
         #[test]
         fn no_matching_instances_returns_zero() {
             let unrelated = to_wide("pid_3_luid_0x12345678_0x56789abc_phys_0_eng_0_engtype_3D");
             let items = vec![item(&unrelated, 90.0, PDH_CSTATUS_VALID_DATA)];
-            assert_eq!(aggregate_usage(&items, 0, 0x00011372), 0.0);
+            assert_eq!(total_usage(&items, 0, 0x00011372), 0.0);
         }
     }
 }
@@ -390,8 +474,8 @@ mod tests {
     fn composes_stats_with_memory_percent() {
         let stats = compose_stats(
             "NVIDIA GeForce RTX 4070".to_string(),
-            8_589_934_592,   // 8 GiB in use
-            17_179_869_184,  // 16 GiB total
+            8_589_934_592,  // 8 GiB in use
+            17_179_869_184, // 16 GiB total
             75.0,
         )
         .unwrap();
@@ -406,7 +490,8 @@ mod tests {
     fn clamps_out_of_range_percentages_to_0_100() {
         // usage above 100 (multi-engine PDH sum overflow) and VRAM used
         // exceeding the reporter's own budget both clamp to 100.
-        let stats = compose_stats("GPU".to_string(), 20_000_000_000, 10_000_000_000, 250.0).unwrap();
+        let stats =
+            compose_stats("GPU".to_string(), 20_000_000_000, 10_000_000_000, 250.0).unwrap();
         assert_eq!(stats.usage_percent, 100.0);
         assert_eq!(stats.memory_percent, 100.0);
 

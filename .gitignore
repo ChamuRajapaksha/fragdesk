@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+*.tsbuildinfo
 *.local
 
 # Editor directories and files
@@ -30,6 +31,5 @@ skills-lock.json
 opencode.json
 
 # Environment variables and secrets
-.env
-.env.local
-.env.*.local
+.env*
+!.env.example

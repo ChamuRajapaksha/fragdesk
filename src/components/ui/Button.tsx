@@ -1,6 +1,6 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -8,15 +8,15 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: 'bg-frag-primary text-frag-bg hover:bg-frag-primary/90',
-  secondary: 'bg-frag-bg text-frag-text border border-frag-border hover:bg-frag-bg/70',
-  ghost: 'text-frag-muted hover:text-frag-text hover:bg-frag-bg',
-  danger: 'bg-frag-danger text-frag-bg hover:bg-frag-danger/90',
+  primary: "bg-frag-primary text-frag-bg hover:bg-frag-primary/90",
+  secondary: "bg-frag-bg text-frag-text border border-frag-border hover:bg-frag-bg/70",
+  ghost: "text-frag-muted hover:text-frag-text hover:bg-frag-bg",
+  danger: "bg-frag-danger text-frag-bg hover:bg-frag-danger/90",
 };
 
 export default function Button({
-  variant = 'primary',
-  className = '',
+  variant = "primary",
+  className = "",
   children,
   ...props
 }: ButtonProps) {

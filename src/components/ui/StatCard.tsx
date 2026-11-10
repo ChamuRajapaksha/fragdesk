@@ -1,5 +1,5 @@
-import type { LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 interface StatCardProps {
   icon: LucideIcon;
@@ -16,17 +16,17 @@ export default function StatCard({
   icon: Icon,
   label,
   value,
-  accent = 'text-frag-primary',
+  accent = "text-frag-primary",
   detail,
   sparkline,
   onClick,
-  className = '',
+  className = "",
 }: StatCardProps) {
   return (
     <div
       onClick={onClick}
       className={`bg-frag-surface border border-frag-border rounded-lg p-4 md:p-5 ${
-        onClick ? 'cursor-pointer hover:border-frag-primary/40 transition-colors' : ''
+        onClick ? "cursor-pointer hover:border-frag-primary/40 transition-colors" : ""
       } ${className}`}
     >
       <div className="flex items-center justify-between gap-3">

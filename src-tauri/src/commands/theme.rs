@@ -1,4 +1,5 @@
-use crate::database::{get_setting, init_database, set_setting};
+use crate::commands::with_db;
+use crate::database::{get_setting, set_setting, DbState};
 
 const SETTING_KEY: &str = "ui_theme";
 const DEFAULT_UI_THEME: &str = "neon";
@@ -7,14 +8,14 @@ const DEFAULT_UI_THEME: &str = "neon";
 /// The full colour definitions live in the frontend (src/themes.ts) -- we
 /// only persist the palette's short id string.
 #[tauri::command]
-pub fn get_ui_theme() -> Result<String, String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    let value = get_setting(&conn, SETTING_KEY).map_err(|e| e.to_string())?;
-    Ok(value.unwrap_or_else(|| DEFAULT_UI_THEME.to_string()))
+pub fn get_ui_theme(state: tauri::State<'_, DbState>) -> Result<String, String> {
+    with_db(&state, |conn| {
+        let value = get_setting(conn, SETTING_KEY)?;
+        Ok(value.unwrap_or_else(|| DEFAULT_UI_THEME.to_string()))
+    })
 }
 
 #[tauri::command]
-pub fn set_ui_theme(theme: String) -> Result<(), String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    set_setting(&conn, SETTING_KEY, &theme).map_err(|e| e.to_string())
+pub fn set_ui_theme(state: tauri::State<'_, DbState>, theme: String) -> Result<(), String> {
+    with_db(&state, |conn| set_setting(conn, SETTING_KEY, &theme))
 }

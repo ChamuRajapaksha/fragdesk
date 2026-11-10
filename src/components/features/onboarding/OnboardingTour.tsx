@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Command, X } from 'lucide-react';
-import { getFeature } from '../../../features/registry';
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { motion, AnimatePresence } from "framer-motion";
+import { Command, X } from "lucide-react";
+import { getFeature } from "../../../features/registry";
 
 interface Step {
   icon: React.ElementType;
@@ -14,45 +14,45 @@ export default function OnboardingTour() {
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
 
-  const MACROS_ICON = getFeature('macros')?.icon ?? Command;
-  const COMMUNITY_ICON = getFeature('community')?.icon ?? Command;
-  const MONITOR_ICON = getFeature('monitor')?.icon ?? Command;
+  const MACROS_ICON = getFeature("macros")?.icon ?? Command;
+  const COMMUNITY_ICON = getFeature("community")?.icon ?? Command;
+  const MONITOR_ICON = getFeature("monitor")?.icon ?? Command;
 
   const STEPS: Step[] = [
     {
       icon: MACROS_ICON,
-      title: 'Welcome to FragDesk',
+      title: "Welcome to FragDesk",
       description:
-        'A gaming companion, productivity utility, and community fragment aggregator, all in one. A quick tour of the essentials before you dive in.',
+        "A gaming companion, productivity utility, and community fragment aggregator, all in one. A quick tour of the essentials before you dive in.",
     },
     {
       icon: MACROS_ICON,
-      title: 'Record macros anywhere',
+      title: "Record macros anywhere",
       description:
-        'Press F9 from anywhere — even if FragDesk isn\'t focused — to start or stop recording keyboard and mouse input. Give a macro its own hotkey later for instant playback during a game.',
+        "Press F9 from anywhere — even if FragDesk isn't focused — to start or stop recording keyboard and mouse input. Give a macro its own hotkey later for instant playback during a game.",
     },
     {
       icon: Command,
-      title: 'Ctrl+K for instant search',
+      title: "Ctrl+K for instant search",
       description:
-        'Jump to any tab or play any saved macro by name, without touching the mouse. Works from anywhere in the app.',
+        "Jump to any tab or play any saved macro by name, without touching the mouse. Works from anywhere in the app.",
     },
     {
       icon: COMMUNITY_ICON,
-      title: 'Share what you build',
+      title: "Share what you build",
       description:
-        'Macros, clipboard snippets, monitor alert rules, even your Monitor layout — share any of them to the Community Library, or import what others have shared. Every macro shows a preview of what it actually does before you import it.',
+        "Macros, clipboard snippets, monitor alert rules, even your Monitor layout — share any of them to the Community Library, or import what others have shared. Every macro shows a preview of what it actually does before you import it.",
     },
     {
       icon: MONITOR_ICON,
-      title: 'Monitor with alerts',
+      title: "Monitor with alerts",
       description:
         'Track CPU and RAM live, set alert rules (like "notify me when CPU is above 90%"), and rearrange the page layout to your liking from the Customize Layout button.',
     },
   ];
 
   useEffect(() => {
-    invoke<boolean>('has_completed_onboarding')
+    invoke<boolean>("has_completed_onboarding")
       .then((completed) => setVisible(!completed))
       .catch(() => {
         // If the check itself fails, err toward NOT interrupting the
@@ -64,9 +64,9 @@ export default function OnboardingTour() {
   async function finish() {
     setVisible(false);
     try {
-      await invoke('mark_onboarding_completed');
+      await invoke("mark_onboarding_completed");
     } catch (err) {
-      console.error('Failed to persist onboarding completion:', err);
+      console.error("Failed to persist onboarding completion:", err);
     }
   }
 
@@ -100,7 +100,7 @@ export default function OnboardingTour() {
           initial={{ opacity: 0, scale: 0.96, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 10 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="bg-frag-surface border border-frag-border rounded-xl w-full max-w-md p-8 relative shadow-2xl"
         >
           <button
@@ -124,7 +124,7 @@ export default function OnboardingTour() {
                 <span
                   key={i}
                   className={`h-1.5 rounded-full transition-all ${
-                    i === step ? 'w-5 bg-frag-primary' : 'w-1.5 bg-frag-border'
+                    i === step ? "w-5 bg-frag-primary" : "w-1.5 bg-frag-border"
                   }`}
                 />
               ))}
@@ -143,7 +143,7 @@ export default function OnboardingTour() {
                 onClick={next}
                 className="px-4 py-1.5 rounded-lg bg-frag-primary text-frag-bg text-sm font-semibold hover:bg-frag-primary/90"
               >
-                {isLastStep ? 'Get Started' : 'Next'}
+                {isLastStep ? "Get Started" : "Next"}
               </button>
             </div>
           </div>

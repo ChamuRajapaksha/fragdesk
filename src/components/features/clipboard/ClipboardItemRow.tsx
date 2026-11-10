@@ -1,5 +1,5 @@
-import { memo } from 'react';
-import { Copy, Pin, Share2, Trash2 } from 'lucide-react';
+import { memo } from "react";
+import { Copy, Pin, Share2, Trash2 } from "lucide-react";
 
 export interface ClipboardItem {
   id: number;
@@ -13,7 +13,7 @@ function formatTimestamp(timestamp: number): string {
   const diffMs = Date.now() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
 
-  if (diffMins < 1) return 'Just now';
+  if (diffMins < 1) return "Just now";
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
   return date.toLocaleDateString();
@@ -40,14 +40,10 @@ function ClipboardItemRow({
 }: ClipboardItemRowProps) {
   return (
     <div className="flex items-start gap-4">
-      {item.is_pinned && (
-        <Pin size={16} className="text-frag-accent mt-1 fill-frag-accent" />
-      )}
+      {item.is_pinned && <Pin size={16} className="text-frag-accent mt-1 fill-frag-accent" />}
 
       <div className="flex-1 min-w-0">
-        <p className="text-frag-text break-words line-clamp-3 overflow-hidden">
-          {item.content}
-        </p>
+        <p className="text-frag-text break-words line-clamp-3 overflow-hidden">{item.content}</p>
         <div className="flex items-center gap-3 mt-2">
           <p className="text-xs text-frag-muted">{formatTimestamp(item.timestamp)}</p>
           <p className="text-xs text-frag-muted">{item.content.length} characters</p>
@@ -82,19 +78,19 @@ function ClipboardItemRow({
         <button
           onClick={() => onTogglePin(item.id)}
           aria-pressed={item.is_pinned}
-          aria-label={item.is_pinned ? 'Unpin item' : 'Pin item'}
+          aria-label={item.is_pinned ? "Unpin item" : "Pin item"}
           className="p-2 bg-frag-accent/10 text-frag-accent rounded-lg hover:bg-frag-accent/20 transition-colors"
         >
-          <Pin size={16} className={item.is_pinned ? 'fill-frag-accent' : ''} />
+          <Pin size={16} className={item.is_pinned ? "fill-frag-accent" : ""} />
         </button>
         <button
           onClick={() => onDelete(item.id)}
-          aria-label={isConfirmingDelete ? 'Confirm delete item' : 'Delete item'}
+          aria-label={isConfirmingDelete ? "Confirm delete item" : "Delete item"}
           aria-live="polite"
           className={`p-2 rounded-lg transition-colors ${
             isConfirmingDelete
-              ? 'bg-frag-danger text-frag-bg hover:bg-frag-danger/90'
-              : 'bg-frag-danger/10 text-frag-danger hover:bg-frag-danger/20'
+              ? "bg-frag-danger text-frag-bg hover:bg-frag-danger/90"
+              : "bg-frag-danger/10 text-frag-danger hover:bg-frag-danger/20"
           }`}
         >
           <Trash2 size={16} />

@@ -1,10 +1,12 @@
+use crate::commands::{with_db, with_db_handle};
 use crate::database::{
     delete_macro_item, get_macro_by_id, get_macro_id_by_hotkey, get_macros as db_get_macros,
-    get_setting, init_database, insert_macro, rename_macro_item, set_macro_hotkey_item,
-    set_macro_source_item as db_set_macro_source, set_macro_tags as db_set_macro_tags,
-    set_setting, MacroEvent, MacroItem, MacroSummary,
+    get_setting, insert_macro, rename_macro_item, set_macro_hotkey_item,
+    set_macro_source_item as db_set_macro_source, set_macro_tags as db_set_macro_tags, set_setting,
+    DbState, MacroEvent, MacroItem, MacroSummary,
 };
 use crate::fragments::{Fragment, FragmentPayload, FRAGMENT_FORMAT_VERSION};
+use crate::hotkey::canonicalize_hotkey;
 use rdev::{listen, simulate, Button, EventType, Key};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -45,6 +47,9 @@ impl MacroRecorder {
 pub struct MacroPlayback {
     pub is_playing: Arc<AtomicBool>,
     pub cancel: Arc<AtomicBool>,
+    /// Which macro the current (or most recent) playback run belongs to.
+    /// Lets the UI restore its "playing" highlight after navigation.
+    pub current_macro_id: Arc<Mutex<Option<String>>>,
 }
 
 impl MacroPlayback {
@@ -52,6 +57,7 @@ impl MacroPlayback {
         Self {
             is_playing: Arc::new(AtomicBool::new(false)),
             cancel: Arc::new(AtomicBool::new(false)),
+            current_macro_id: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -87,7 +93,7 @@ pub struct RecordingPreview {
 
 /// The DB key under which the record-toggle hotkey is persisted (via the
 /// generic `settings` table).
-const RECORD_HOTKEY_SETTING_KEY: &str = "record_toggle_hotkey";
+pub const RECORD_HOTKEY_SETTING_KEY: &str = "record_toggle_hotkey";
 
 /// Fallback used the very first time the app runs, before any hotkey has
 /// been saved.
@@ -116,6 +122,43 @@ pub fn get_record_hotkey(state: tauri::State<'_, RecordHotkeyState>) -> String {
     state.current.lock().unwrap().clone()
 }
 
+/// Current recorder state, including a stopped-but-unsaved capture. The UI
+/// queries this on mount so navigating away mid-recording does not hide it.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecordingStatus {
+    pub is_recording: bool,
+    pub event_count: usize,
+    pub duration_ms: u64,
+}
+
+#[tauri::command]
+pub fn get_recording_status(state: tauri::State<'_, MacroRecorder>) -> RecordingStatus {
+    let is_recording = state.is_recording.load(Ordering::SeqCst);
+    let buffer = state.buffer.lock().unwrap();
+
+    RecordingStatus {
+        is_recording,
+        event_count: buffer.len(),
+        duration_ms: buffer.iter().map(event_delay_ms).sum(),
+    }
+}
+
+/// Current playback state and target macro. Queried on mount so a playback
+/// started before navigating away is still reflected in the UI.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlaybackStatus {
+    pub is_playing: bool,
+    pub macro_id: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_playback_status(state: tauri::State<'_, MacroPlayback>) -> PlaybackStatus {
+    PlaybackStatus {
+        is_playing: state.is_playing.load(Ordering::SeqCst),
+        macro_id: state.current_macro_id.lock().unwrap().clone(),
+    }
+}
+
 /// Remaps the record-toggle hotkey. Rejects the change if the requested
 /// combo is already assigned to a macro's playback hotkey, to avoid one
 /// key press ambiguously meaning two different things.
@@ -123,30 +166,38 @@ pub fn get_record_hotkey(state: tauri::State<'_, RecordHotkeyState>) -> String {
 pub fn set_record_hotkey(
     app_handle: AppHandle,
     state: tauri::State<'_, RecordHotkeyState>,
+    db: tauri::State<'_, DbState>,
     hotkey: String,
 ) -> Result<(), String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
+    // Reject malformed input before touching the OS keyboard state.
+    let hotkey = canonicalize_hotkey(&hotkey)?;
 
-    if get_macro_id_by_hotkey(&conn, &hotkey)
-        .map_err(|e| e.to_string())?
-        .is_some()
-    {
+    let conflict = with_db(&db, |conn| get_macro_id_by_hotkey(conn, &hotkey))?;
+    if conflict.is_some() {
         return Err("That combo is already assigned to a macro's playback hotkey".to_string());
     }
 
     let old = state.current.lock().unwrap().clone();
+    if old == hotkey {
+        return Ok(());
+    }
 
+    // Register the replacement before releasing the old binding, so a
+    // failed registration leaves the previous hotkey working.
     app_handle
         .global_shortcut()
         .register(hotkey.as_str())
         .map_err(|e| format!("Failed to register hotkey '{hotkey}': {e}"))?;
 
-    if old != hotkey {
-        let _ = app_handle.global_shortcut().unregister(old.as_str());
+    if let Err(err) = with_db(&db, |conn| {
+        set_setting(conn, RECORD_HOTKEY_SETTING_KEY, &hotkey)
+    }) {
+        let _ = app_handle.global_shortcut().unregister(hotkey.as_str());
+        return Err(err);
     }
 
-    *state.current.lock().unwrap() = hotkey.clone();
-    set_setting(&conn, RECORD_HOTKEY_SETTING_KEY, &hotkey).map_err(|e| e.to_string())?;
+    let _ = app_handle.global_shortcut().unregister(old.as_str());
+    *state.current.lock().unwrap() = hotkey;
 
     Ok(())
 }
@@ -211,6 +262,7 @@ pub fn stop_macro_recording(
 #[tauri::command]
 pub fn save_macro_recording(
     state: tauri::State<'_, MacroRecorder>,
+    db: tauri::State<'_, DbState>,
     name: String,
 ) -> Result<MacroSummary, String> {
     state.is_recording.store(false, Ordering::SeqCst); // safety net
@@ -225,8 +277,9 @@ pub fn save_macro_recording(
     let duration_ms: u64 = events.iter().map(event_delay_ms).sum();
     let id = Uuid::new_v4().to_string();
 
-    let conn = init_database().map_err(|e| e.to_string())?;
-    insert_macro(&conn, &id, &name, &events, duration_ms as i64).map_err(|e| e.to_string())?;
+    with_db(&db, |conn| {
+        insert_macro(conn, &id, &name, &events, duration_ms as i64)
+    })?;
 
     Ok(MacroSummary {
         id,
@@ -249,40 +302,46 @@ pub fn discard_macro_recording(state: tauri::State<'_, MacroRecorder>) -> Result
 }
 
 #[tauri::command]
-pub fn get_macros() -> Result<Vec<MacroSummary>, String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    db_get_macros(&conn).map_err(|e| e.to_string())
+pub fn get_macros(state: tauri::State<'_, DbState>) -> Result<Vec<MacroSummary>, String> {
+    with_db(&state, db_get_macros)
 }
 
 #[tauri::command]
 pub fn delete_macro(
     app_handle: AppHandle,
     registry: tauri::State<'_, HotkeyRegistry>,
+    db: tauri::State<'_, DbState>,
     id: String,
 ) -> Result<(), String> {
     // Unregister any hotkey this macro owned so it doesn't linger as a
     // dangling global shortcut pointing at a deleted macro.
-    let conn = init_database().map_err(|e| e.to_string())?;
-    if let Some(existing) = get_macro_by_id(&conn, &id).map_err(|e| e.to_string())? {
+    let existing = with_db(&db, |conn| get_macro_by_id(conn, &id))?;
+    if let Some(existing) = existing {
         if let Some(hotkey) = existing.hotkey {
             let _ = app_handle.global_shortcut().unregister(hotkey.as_str());
             registry.map.lock().unwrap().remove(&hotkey);
         }
     }
 
-    delete_macro_item(&conn, &id).map_err(|e| e.to_string())
+    with_db(&db, |conn| delete_macro_item(conn, &id))
 }
 
 #[tauri::command]
-pub fn rename_macro(id: String, name: String) -> Result<(), String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    rename_macro_item(&conn, &id, &name).map_err(|e| e.to_string())
+pub fn rename_macro(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+) -> Result<(), String> {
+    with_db(&state, |conn| rename_macro_item(conn, &id, &name))
 }
 
 #[tauri::command]
-pub fn set_macro_tags(id: String, tags: Vec<String>) -> Result<(), String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    db_set_macro_tags(&conn, &id, &tags).map_err(|e| e.to_string())
+pub fn set_macro_tags(
+    state: tauri::State<'_, DbState>,
+    id: String,
+    tags: Vec<String>,
+) -> Result<(), String> {
+    with_db(&state, |conn| db_set_macro_tags(conn, &id, &tags))
 }
 
 /// Returns a pretty-printed JSON string for the given macro, wrapped in
@@ -290,10 +349,8 @@ pub fn set_macro_tags(id: String, tags: Vec<String>) -> Result<(), String> {
 /// triggers the actual file save via a plain browser Blob download -- no
 /// Tauri dialog/fs plugin needed for this.
 #[tauri::command]
-pub fn export_macro_json(id: String) -> Result<String, String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    let macro_item = get_macro_by_id(&conn, &id)
-        .map_err(|e| e.to_string())?
+pub fn export_macro_json(state: tauri::State<'_, DbState>, id: String) -> Result<String, String> {
+    let macro_item = with_db(&state, |conn| get_macro_by_id(conn, &id))?
         .ok_or_else(|| "Macro not found".to_string())?;
 
     let fragment = Fragment {
@@ -315,7 +372,11 @@ pub fn export_macro_json(id: String) -> Result<String, String> {
 /// macro -- even re-importing the same file twice just creates a second
 /// copy. Tags carry over from the fragment; hotkey never does.
 #[tauri::command]
-pub fn import_macro_json(json: String, source: Option<String>) -> Result<MacroSummary, String> {
+pub fn import_macro_json(
+    state: tauri::State<'_, DbState>,
+    json: String,
+    source: Option<String>,
+) -> Result<MacroSummary, String> {
     let fragment: Fragment =
         serde_json::from_str(&json).map_err(|e| format!("Couldn't parse fragment file: {e}"))?;
 
@@ -337,15 +398,16 @@ pub fn import_macro_json(json: String, source: Option<String>) -> Result<MacroSu
     let duration_ms: u64 = events.iter().map(event_delay_ms).sum();
     let id = Uuid::new_v4().to_string();
 
-    let conn = init_database().map_err(|e| e.to_string())?;
-    insert_macro(&conn, &id, &fragment.name, &events, duration_ms as i64)
-        .map_err(|e| e.to_string())?;
-    if !fragment.tags.is_empty() {
-        db_set_macro_tags(&conn, &id, &fragment.tags).map_err(|e| e.to_string())?;
-    }
-    if let Some(src) = &source {
-        db_set_macro_source(&conn, &id, Some(src.as_str())).map_err(|e| e.to_string())?;
-    }
+    with_db(&state, |conn| {
+        insert_macro(conn, &id, &fragment.name, &events, duration_ms as i64)?;
+        if !fragment.tags.is_empty() {
+            db_set_macro_tags(conn, &id, &fragment.tags)?;
+        }
+        if let Some(src) = &source {
+            db_set_macro_source(conn, &id, Some(src.as_str()))?;
+        }
+        Ok(())
+    })?;
 
     Ok(MacroSummary {
         id,
@@ -479,6 +541,7 @@ pub fn list_bundled_fragments(
 #[tauri::command]
 pub fn import_bundled_fragment(
     app_handle: AppHandle,
+    state: tauri::State<'_, DbState>,
     filename: String,
 ) -> Result<MacroSummary, String> {
     // Reject anything that looks like a path traversal attempt -- this is
@@ -492,7 +555,7 @@ pub fn import_bundled_fragment(
     let contents = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read bundled fragment '{filename}': {e}"))?;
 
-    import_macro_json(contents, Some("starter".to_string()))
+    import_macro_json(state, contents, Some("starter".to_string()))
 }
 
 /// Assigns (or clears, if `hotkey` is `None`) a global hotkey for a macro.
@@ -502,40 +565,61 @@ pub fn import_bundled_fragment(
 pub fn set_macro_hotkey(
     app_handle: AppHandle,
     registry: tauri::State<'_, HotkeyRegistry>,
+    db: tauri::State<'_, DbState>,
     id: String,
     hotkey: Option<String>,
 ) -> Result<(), String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
+    // Reject malformed input before touching the OS keyboard state.
+    let hotkey = match hotkey {
+        Some(raw) => Some(canonicalize_hotkey(&raw)?),
+        None => None,
+    };
 
-    let existing_hotkey = get_macro_by_id(&conn, &id)
-        .map_err(|e| e.to_string())?
-        .and_then(|m| m.hotkey);
+    let existing_hotkey = with_db(&db, |conn| get_macro_by_id(conn, &id))?.and_then(|m| m.hotkey);
 
     if let Some(new_key) = &hotkey {
-        if let Some(owner_id) = get_macro_id_by_hotkey(&conn, new_key).map_err(|e| e.to_string())? {
+        if let Some(owner_id) = with_db(&db, |conn| get_macro_id_by_hotkey(conn, new_key))? {
             if owner_id != id {
                 return Err("That hotkey is already assigned to another macro".to_string());
             }
         }
     }
 
-    // Unregister the old binding if it's being replaced or cleared.
-    if let Some(old_key) = &existing_hotkey {
-        if hotkey.as_deref() != Some(old_key.as_str()) {
-            let _ = app_handle.global_shortcut().unregister(old_key.as_str());
-            registry.map.lock().unwrap().remove(old_key);
-        }
+    if existing_hotkey.as_deref() == hotkey.as_deref() {
+        return Ok(());
     }
 
+    // Register the replacement before releasing the old binding, so a
+    // failed registration leaves the previous hotkey working.
     if let Some(new_key) = &hotkey {
         app_handle
             .global_shortcut()
             .register(new_key.as_str())
             .map_err(|e| format!("Failed to register hotkey '{new_key}': {e}"))?;
-        registry.map.lock().unwrap().insert(new_key.clone(), id.clone());
     }
 
-    set_macro_hotkey_item(&conn, &id, hotkey.as_deref()).map_err(|e| e.to_string())?;
+    if let Err(err) = with_db(&db, |conn| {
+        set_macro_hotkey_item(conn, &id, hotkey.as_deref())
+    }) {
+        if let Some(new_key) = &hotkey {
+            let _ = app_handle.global_shortcut().unregister(new_key.as_str());
+        }
+        return Err(err);
+    }
+
+    // Persistence succeeded -- now it's safe to release the old binding.
+    if let Some(old_key) = &existing_hotkey {
+        let _ = app_handle.global_shortcut().unregister(old_key.as_str());
+        registry.map.lock().unwrap().remove(old_key);
+    }
+    if let Some(new_key) = &hotkey {
+        registry
+            .map
+            .lock()
+            .unwrap()
+            .insert(new_key.clone(), id.clone());
+    }
+
     Ok(())
 }
 
@@ -543,6 +627,7 @@ pub fn set_macro_hotkey(
 pub fn play_macro(
     app_handle: AppHandle,
     state: tauri::State<'_, MacroPlayback>,
+    db: tauri::State<'_, DbState>,
     id: String,
     speed: Option<f64>,
     repeat: Option<i32>,
@@ -551,15 +636,14 @@ pub fn play_macro(
         return Err("A macro is already playing".to_string());
     }
 
-    let conn = init_database().map_err(|e| e.to_string())?;
-    let macro_item = get_macro_by_id(&conn, &id)
-        .map_err(|e| e.to_string())?
+    let macro_item = with_db(&db, |conn| get_macro_by_id(conn, &id))?
         .ok_or_else(|| "Macro not found".to_string())?;
 
     start_playback(
         app_handle,
         state.is_playing.clone(),
         state.cancel.clone(),
+        state.current_macro_id.clone(),
         macro_item,
         speed.unwrap_or(1.0),
         repeat.unwrap_or(1),
@@ -604,15 +688,7 @@ pub fn handle_global_shortcut(app_handle: &AppHandle, shortcut_str: &str) {
         return;
     }
 
-    let conn = match init_database() {
-        Ok(c) => c,
-        Err(err) => {
-            eprintln!("[macros] hotkey trigger: failed to open db: {err}");
-            return;
-        }
-    };
-
-    let macro_item = match get_macro_by_id(&conn, &id) {
+    let macro_item = match with_db_handle(app_handle, |conn| get_macro_by_id(conn, &id)) {
         Ok(Some(m)) => m,
         Ok(None) => return,
         Err(err) => {
@@ -625,6 +701,7 @@ pub fn handle_global_shortcut(app_handle: &AppHandle, shortcut_str: &str) {
         app_handle.clone(),
         playback.is_playing.clone(),
         playback.cancel.clone(),
+        playback.current_macro_id.clone(),
         macro_item,
         1.0,
         1,
@@ -678,12 +755,14 @@ fn start_playback(
     app_handle: AppHandle,
     is_playing: Arc<AtomicBool>,
     cancel: Arc<AtomicBool>,
+    current_macro_id: Arc<Mutex<Option<String>>>,
     macro_item: MacroItem,
     speed: f64,
     repeat: i32,
 ) {
     cancel.store(false, Ordering::SeqCst);
     is_playing.store(true, Ordering::SeqCst);
+    *current_macro_id.lock().unwrap() = Some(macro_item.id.clone());
 
     let speed = if speed <= 0.0 { 1.0 } else { speed };
     let repeat = repeat.max(1);
@@ -723,6 +802,12 @@ fn start_playback(
             }
         }
 
+        {
+            let mut current = current_macro_id.lock().unwrap();
+            if current.as_deref() == Some(macro_item.id.as_str()) {
+                *current = None;
+            }
+        }
         is_playing.store(false, Ordering::SeqCst);
         let _ = app_handle.emit(
             "macro-playback-finished",
@@ -820,9 +905,18 @@ fn parse_key(s: &str) -> Option<Key> {
         "DownArrow" => DownArrow,
         "End" => End,
         "Escape" => Escape,
-        "F1" => F1, "F2" => F2, "F3" => F3, "F4" => F4,
-        "F5" => F5, "F6" => F6, "F7" => F7, "F8" => F8,
-        "F9" => F9, "F10" => F10, "F11" => F11, "F12" => F12,
+        "F1" => F1,
+        "F2" => F2,
+        "F3" => F3,
+        "F4" => F4,
+        "F5" => F5,
+        "F6" => F6,
+        "F7" => F7,
+        "F8" => F8,
+        "F9" => F9,
+        "F10" => F10,
+        "F11" => F11,
+        "F12" => F12,
         "Home" => Home,
         "LeftArrow" => LeftArrow,
         "MetaLeft" => MetaLeft,
@@ -841,16 +935,42 @@ fn parse_key(s: &str) -> Option<Key> {
         "Pause" => Pause,
         "NumLock" => NumLock,
         "BackQuote" => BackQuote,
-        "Num0" => Num0, "Num1" => Num1, "Num2" => Num2, "Num3" => Num3,
-        "Num4" => Num4, "Num5" => Num5, "Num6" => Num6, "Num7" => Num7,
-        "Num8" => Num8, "Num9" => Num9,
-        "KeyA" => KeyA, "KeyB" => KeyB, "KeyC" => KeyC, "KeyD" => KeyD,
-        "KeyE" => KeyE, "KeyF" => KeyF, "KeyG" => KeyG, "KeyH" => KeyH,
-        "KeyI" => KeyI, "KeyJ" => KeyJ, "KeyK" => KeyK, "KeyL" => KeyL,
-        "KeyM" => KeyM, "KeyN" => KeyN, "KeyO" => KeyO, "KeyP" => KeyP,
-        "KeyQ" => KeyQ, "KeyR" => KeyR, "KeyS" => KeyS, "KeyT" => KeyT,
-        "KeyU" => KeyU, "KeyV" => KeyV, "KeyW" => KeyW, "KeyX" => KeyX,
-        "KeyY" => KeyY, "KeyZ" => KeyZ,
+        "Num0" => Num0,
+        "Num1" => Num1,
+        "Num2" => Num2,
+        "Num3" => Num3,
+        "Num4" => Num4,
+        "Num5" => Num5,
+        "Num6" => Num6,
+        "Num7" => Num7,
+        "Num8" => Num8,
+        "Num9" => Num9,
+        "KeyA" => KeyA,
+        "KeyB" => KeyB,
+        "KeyC" => KeyC,
+        "KeyD" => KeyD,
+        "KeyE" => KeyE,
+        "KeyF" => KeyF,
+        "KeyG" => KeyG,
+        "KeyH" => KeyH,
+        "KeyI" => KeyI,
+        "KeyJ" => KeyJ,
+        "KeyK" => KeyK,
+        "KeyL" => KeyL,
+        "KeyM" => KeyM,
+        "KeyN" => KeyN,
+        "KeyO" => KeyO,
+        "KeyP" => KeyP,
+        "KeyQ" => KeyQ,
+        "KeyR" => KeyR,
+        "KeyS" => KeyS,
+        "KeyT" => KeyT,
+        "KeyU" => KeyU,
+        "KeyV" => KeyV,
+        "KeyW" => KeyW,
+        "KeyX" => KeyX,
+        "KeyY" => KeyY,
+        "KeyZ" => KeyZ,
         "LeftBracket" => LeftBracket,
         "RightBracket" => RightBracket,
         "Minus" => Minus,
@@ -861,8 +981,16 @@ fn parse_key(s: &str) -> Option<Key> {
         "KpMultiply" => KpMultiply,
         "KpDivide" => KpDivide,
         "KpDelete" => KpDelete,
-        "Kp0" => Kp0, "Kp1" => Kp1, "Kp2" => Kp2, "Kp3" => Kp3, "Kp4" => Kp4,
-        "Kp5" => Kp5, "Kp6" => Kp6, "Kp7" => Kp7, "Kp8" => Kp8, "Kp9" => Kp9,
+        "Kp0" => Kp0,
+        "Kp1" => Kp1,
+        "Kp2" => Kp2,
+        "Kp3" => Kp3,
+        "Kp4" => Kp4,
+        "Kp5" => Kp5,
+        "Kp6" => Kp6,
+        "Kp7" => Kp7,
+        "Kp8" => Kp8,
+        "Kp9" => Kp9,
         other => {
             let code = other
                 .strip_prefix("Unknown(")?
@@ -895,7 +1023,9 @@ fn to_sim_event(event: &MacroEvent) -> Option<EventType> {
         MacroEvent::MouseMove { x, y, .. } => Some(EventType::MouseMove { x: *x, y: *y }),
         MacroEvent::MouseDown { button, .. } => parse_button(button).map(EventType::ButtonPress),
         MacroEvent::MouseUp { button, .. } => parse_button(button).map(EventType::ButtonRelease),
-        MacroEvent::Wheel { delta_x, delta_y, .. } => Some(EventType::Wheel {
+        MacroEvent::Wheel {
+            delta_x, delta_y, ..
+        } => Some(EventType::Wheel {
             delta_x: *delta_x,
             delta_y: *delta_y,
         }),
@@ -905,25 +1035,25 @@ fn to_sim_event(event: &MacroEvent) -> Option<EventType> {
 #[cfg(test)]
 mod key_parsing_tests {
     use super::*;
- 
+
     #[test]
     fn parse_key_handles_letter_keys() {
         assert!(matches!(parse_key("KeyA"), Some(Key::KeyA)));
         assert!(matches!(parse_key("KeyZ"), Some(Key::KeyZ)));
     }
- 
+
     #[test]
     fn parse_key_handles_number_keys() {
         assert!(matches!(parse_key("Num0"), Some(Key::Num0)));
         assert!(matches!(parse_key("Num9"), Some(Key::Num9)));
     }
- 
+
     #[test]
     fn parse_key_handles_function_keys() {
         assert!(matches!(parse_key("F1"), Some(Key::F1)));
         assert!(matches!(parse_key("F12"), Some(Key::F12)));
     }
- 
+
     #[test]
     fn parse_key_handles_modifier_and_special_keys() {
         assert!(matches!(parse_key("ControlLeft"), Some(Key::ControlLeft)));
@@ -932,13 +1062,13 @@ mod key_parsing_tests {
         assert!(matches!(parse_key("Escape"), Some(Key::Escape)));
         assert!(matches!(parse_key("Space"), Some(Key::Space)));
     }
- 
+
     #[test]
     fn parse_key_handles_keypad_keys() {
         assert!(matches!(parse_key("Kp5"), Some(Key::Kp5)));
         assert!(matches!(parse_key("KpReturn"), Some(Key::KpReturn)));
     }
- 
+
     #[test]
     fn parse_key_round_trips_unknown_variant() {
         // This is the fallback path for platform-specific key codes rdev
@@ -950,21 +1080,21 @@ mod key_parsing_tests {
             other => panic!("expected Unknown(42), got {other:?}"),
         }
     }
- 
+
     #[test]
     fn parse_key_rejects_garbage_input() {
         assert!(parse_key("NotARealKey").is_none());
         assert!(parse_key("").is_none());
         assert!(parse_key("Unknown(not_a_number)").is_none());
     }
- 
+
     #[test]
     fn parse_button_handles_named_buttons() {
         assert!(matches!(parse_button("Left"), Some(Button::Left)));
         assert!(matches!(parse_button("Right"), Some(Button::Right)));
         assert!(matches!(parse_button("Middle"), Some(Button::Middle)));
     }
- 
+
     #[test]
     fn parse_button_round_trips_unknown_variant() {
         match parse_button("Unknown(7)") {
@@ -972,13 +1102,13 @@ mod key_parsing_tests {
             other => panic!("expected Unknown(7), got {other:?}"),
         }
     }
- 
+
     #[test]
     fn parse_button_rejects_garbage_input() {
         assert!(parse_button("NotARealButton").is_none());
         assert!(parse_button("").is_none());
     }
- 
+
     #[test]
     fn key_and_button_debug_format_round_trips_for_common_cases() {
         // The recorder stores keys/buttons via format!("{:?}", key) and
@@ -989,7 +1119,7 @@ mod key_parsing_tests {
         let key = Key::KeyQ;
         let debug_str = format!("{:?}", key);
         assert!(matches!(parse_key(&debug_str), Some(Key::KeyQ)));
- 
+
         let button = Button::Left;
         let debug_str = format!("{:?}", button);
         assert!(matches!(parse_button(&debug_str), Some(Button::Left)));

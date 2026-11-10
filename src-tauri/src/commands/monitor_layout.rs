@@ -1,4 +1,5 @@
-use crate::database::{get_setting, init_database, set_setting};
+use crate::commands::with_db;
+use crate::database::{get_setting, set_setting, DbState};
 use crate::fragments::{Fragment, FragmentPayload, MonitorWidgetConfig, FRAGMENT_FORMAT_VERSION};
 
 const SETTING_KEY: &str = "monitor_layout";
@@ -8,7 +9,14 @@ const SETTING_KEY: &str = "monitor_layout";
 /// -- both when a user reorders things locally, and when an imported
 /// community fragment might reference widgets from a version of the app
 /// (older or newer) that doesn't quite match this one.
-const KNOWN_WIDGET_IDS: [&str; 6] = ["stats", "alerts", "cpu_graph", "ram_graph", "gpu_graph", "fps"];
+const KNOWN_WIDGET_IDS: [&str; 6] = [
+    "stats",
+    "alerts",
+    "cpu_graph",
+    "ram_graph",
+    "gpu_graph",
+    "fps",
+];
 
 fn default_layout() -> Vec<MonitorWidgetConfig> {
     KNOWN_WIDGET_IDS
@@ -50,9 +58,10 @@ fn normalize_layout(input: Vec<MonitorWidgetConfig>) -> Vec<MonitorWidgetConfig>
 }
 
 #[tauri::command]
-pub fn get_monitor_layout() -> Result<Vec<MonitorWidgetConfig>, String> {
-    let conn = init_database().map_err(|e| e.to_string())?;
-    match get_setting(&conn, SETTING_KEY).map_err(|e| e.to_string())? {
+pub fn get_monitor_layout(
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<MonitorWidgetConfig>, String> {
+    match with_db(&state, |conn| get_setting(conn, SETTING_KEY))? {
         Some(json) => {
             let parsed: Vec<MonitorWidgetConfig> =
                 serde_json::from_str(&json).unwrap_or_else(|_| default_layout());
@@ -63,17 +72,22 @@ pub fn get_monitor_layout() -> Result<Vec<MonitorWidgetConfig>, String> {
 }
 
 #[tauri::command]
-pub fn set_monitor_layout(widgets: Vec<MonitorWidgetConfig>) -> Result<Vec<MonitorWidgetConfig>, String> {
+pub fn set_monitor_layout(
+    state: tauri::State<'_, DbState>,
+    widgets: Vec<MonitorWidgetConfig>,
+) -> Result<Vec<MonitorWidgetConfig>, String> {
     let normalized = normalize_layout(widgets);
     let json = serde_json::to_string(&normalized).map_err(|e| e.to_string())?;
-    let conn = init_database().map_err(|e| e.to_string())?;
-    set_setting(&conn, SETTING_KEY, &json).map_err(|e| e.to_string())?;
+    with_db(&state, |conn| set_setting(conn, SETTING_KEY, &json))?;
     Ok(normalized)
 }
 
 #[tauri::command]
-pub fn export_monitor_layout_json(name: String) -> Result<String, String> {
-    let widgets = get_monitor_layout()?;
+pub fn export_monitor_layout_json(
+    state: tauri::State<'_, DbState>,
+    name: String,
+) -> Result<String, String> {
+    let widgets = get_monitor_layout(state)?;
 
     let fragment = Fragment {
         format_version: FRAGMENT_FORMAT_VERSION,
@@ -92,7 +106,10 @@ pub fn export_monitor_layout_json(name: String) -> Result<String, String> {
 /// layout with this." There's no separate list of "your layouts" to
 /// browse afterward.
 #[tauri::command]
-pub fn import_monitor_layout_json(json: String) -> Result<Vec<MonitorWidgetConfig>, String> {
+pub fn import_monitor_layout_json(
+    state: tauri::State<'_, DbState>,
+    json: String,
+) -> Result<Vec<MonitorWidgetConfig>, String> {
     let fragment: Fragment =
         serde_json::from_str(&json).map_err(|e| format!("Couldn't parse fragment file: {e}"))?;
 
@@ -107,21 +124,20 @@ pub fn import_monitor_layout_json(json: String) -> Result<Vec<MonitorWidgetConfi
         return Err("This fragment isn't a monitor layout".to_string());
     };
 
-    set_monitor_layout(widgets)
+    set_monitor_layout(state, widgets)
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
- 
+
     fn widget(id: &str, visible: bool) -> MonitorWidgetConfig {
         MonitorWidgetConfig {
             id: id.to_string(),
             visible,
         }
     }
- 
+
     #[test]
     fn default_layout_has_all_known_widgets_visible() {
         let layout = default_layout();
@@ -131,7 +147,7 @@ mod tests {
             assert!(layout.iter().any(|w| w.id == id));
         }
     }
- 
+
     #[test]
     fn normalize_preserves_a_valid_full_layout_unchanged() {
         let input = vec![
@@ -145,7 +161,7 @@ mod tests {
         let result = normalize_layout(input.clone());
         assert_eq!(result, input);
     }
- 
+
     #[test]
     fn normalize_drops_unknown_widget_ids() {
         // A fragment from a newer app version might reference a widget
@@ -162,7 +178,7 @@ mod tests {
         assert!(!result.iter().any(|w| w.id == "some_future_widget"));
         assert_eq!(result.len(), KNOWN_WIDGET_IDS.len());
     }
- 
+
     #[test]
     fn normalize_appends_missing_known_widgets_as_visible() {
         // A fragment from an older app version might predate a widget
@@ -170,7 +186,7 @@ mod tests {
         // silently vanish for the importer.
         let input = vec![widget("stats", true), widget("alerts", false)];
         let result = normalize_layout(input);
- 
+
         assert_eq!(result.len(), KNOWN_WIDGET_IDS.len());
         assert!(result.iter().any(|w| w.id == "cpu_graph" && w.visible));
         assert!(result.iter().any(|w| w.id == "ram_graph" && w.visible));
@@ -178,7 +194,7 @@ mod tests {
         // Existing entries' visibility is preserved, not reset.
         assert!(result.iter().any(|w| w.id == "alerts" && !w.visible));
     }
- 
+
     #[test]
     fn normalize_drops_duplicate_ids_keeping_first_occurrence() {
         let input = vec![
@@ -189,12 +205,12 @@ mod tests {
             widget("ram_graph", true),
         ];
         let result = normalize_layout(input);
- 
+
         let stats_entries: Vec<_> = result.iter().filter(|w| w.id == "stats").collect();
         assert_eq!(stats_entries.len(), 1);
         assert!(stats_entries[0].visible); // kept the FIRST occurrence (visible: true)
     }
- 
+
     #[test]
     fn normalize_handles_completely_empty_input() {
         let result = normalize_layout(vec![]);

@@ -13,9 +13,11 @@ create table if not exists fragments (
   tags text[] not null default '{}',
   format_version integer not null,
   payload jsonb not null,
-  submitted_by text,                       -- anonymous device id for now; real
-                                            -- auth (submitted_by -> auth.users)
-                                            -- is future work, see note below
+  -- The submitting user's id. Typed as uuid from the very first install so
+  -- the insert policy below (submitted_by = auth.uid()) is valid without
+  -- the separate type-changing migration older installs need. NULL means
+  -- a legacy/pre-auth row, intentionally unowned.
+  submitted_by uuid,
   download_count integer not null default 0,
   created_at timestamptz not null default now()
 );
@@ -44,19 +46,17 @@ create policy "Public fragments are viewable by everyone"
   on fragments for select
   using (true);
 
--- Anyone can submit a fragment, with basic shape validation enforced at
--- the database level (defense in depth -- the client should validate too,
--- but a malicious client bypassing the UI can't bypass this).
+-- Only signed-in users can submit, and only as themselves. Basic shape
+-- validation is enforced at the database level too (defense in depth --
+-- the client should validate as well, but a malicious client bypassing the
+-- UI can't bypass this).
 --
 -- fragment_type is allow-listed explicitly rather than left open, so a
 -- typo'd or malicious type can't silently pollute the table. Extend this
 -- list every time a new FragmentPayload variant is added on the Rust side
 -- (see src-tauri/src/fragments.rs) -- these two lists should stay in sync.
-
--- Run in Supabase SQL Editor. Adds monitor_alert_rule to the fragment_type
--- allow-list, learning from the clipboard_snippet miss earlier -- doing
--- this proactively alongside the Rust-side change this time, not after
--- someone hits the RLS error.
+-- Keep all four types here: narrowing this list silently breaks sharing
+-- for clipboard snippets, alert rules, and monitor layouts.
 
 drop policy if exists "Authenticated users can submit their own fragment" on fragments;
 create policy "Authenticated users can submit their own fragment"
