@@ -1,0 +1,32 @@
+name: Supabase keep-alive
+
+on:
+  schedule:
+    # Daily at 06:17 UTC. Free-plan projects pause after roughly a week
+    # without database activity; one read per day keeps FragDesk's project
+    # active. Scheduled workflows only run from the default branch.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Read one fragment row
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "SUPABASE_URL / SUPABASE_ANON_KEY secrets are not set; skipping keep-alive."
+            exit 0
+          fi
+
+          curl --fail --silent --show-error \
+            "${SUPABASE_URL%/}/rest/v1/fragments?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY"
